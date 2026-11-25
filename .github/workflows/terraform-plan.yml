@@ -25,7 +25,7 @@ env:
   ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
   TF_IN_AUTOMATION: "true"
-
+  TF_INPUT: "false"
 jobs:
   plan:
     runs-on: ubuntu-latest
