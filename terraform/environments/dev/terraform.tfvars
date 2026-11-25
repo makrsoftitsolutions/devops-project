@@ -1,0 +1,18 @@
+subscription_id = "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
+
+location    = "centralindia"
+environment = "dev"
+project     = "makrsoft"
+
+enable_log_analytics       = false
+enable_firewall            = false
+enable_bastion             = false
+enable_application_gateway = false
+enable_acr                 = false
+enable_aks                 = false
+enable_key_vault           = false
+
+acr_name       = "makrsoftdevacr001"
+key_vault_name = "kv-makrsoft-dev-001"
+
+aks_admin_group_object_ids = []
