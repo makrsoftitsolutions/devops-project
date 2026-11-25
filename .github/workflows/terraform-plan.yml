@@ -70,6 +70,20 @@ jobs:
 
       - name: Terraform Validate
         run: terraform validate
+        
+      - name: Verify Terraform Variables
+        run: |
+          echo "Current directory:"
+          pwd
 
+          echo "Checking files:"
+          ls -la
+
+          echo "Checking subscription variable:"
+          grep -n "^subscription_id" terraform.tfvars
+
+          test -f terraform.tfvars
+          grep -q '^subscription_id[[:space:]]*=' terraform.tfvars
+          
       - name: Terraform Plan
         run: terraform plan -no-color
