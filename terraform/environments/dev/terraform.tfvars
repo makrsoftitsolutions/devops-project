@@ -4,16 +4,16 @@ location    = "centralindia"
 environment = "dev"
 project     = "makrsoft"
 
-enable_log_analytics       = false
-enable_firewall            = false
-enable_bastion             = true
-enable_application_gateway = false
-enable_acr                 = false
-enable_aks                 = true
-enable_key_vault           = false
-enable_management_vm = true
-management_vm_size        = "Standard_B2s"
-management_admin_username = "azureadmin"
+enable_log_analytics            = false
+enable_firewall                 = false
+enable_bastion                  = true
+enable_application_gateway      = false
+enable_acr                      = false
+enable_aks                      = true
+enable_key_vault                = false
+enable_management_vm            = true
+management_vm_size              = "Standard_B2s"
+management_admin_username       = "azureadmin"
 management_admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMbJA7junOZmDFYgBAHZnRag93yNaHng3CkqWjU733WL aks-management-dev"
 
 acr_name       = "makrsoftdevacr001"

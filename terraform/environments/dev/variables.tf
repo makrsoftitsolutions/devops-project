@@ -55,11 +55,11 @@ variable "spoke_subnets" {
     service_endpoints = optional(list(string), [])
   }))
   default = {
-    snet-aks       = { address_prefixes = ["10.1.0.0/22"] }
-    snet-appgw     = { address_prefixes = ["10.1.4.0/24"] }
-    snet-private   = { address_prefixes = ["10.1.5.0/24"] }
-    snet-workloads = { address_prefixes = ["10.1.6.0/24"] }
-	snet-management = { address_prefixes = ["10.1.7.0/24"] }
+    snet-aks        = { address_prefixes = ["10.1.0.0/22"] }
+    snet-appgw      = { address_prefixes = ["10.1.4.0/24"] }
+    snet-private    = { address_prefixes = ["10.1.5.0/24"] }
+    snet-workloads  = { address_prefixes = ["10.1.6.0/24"] }
+    snet-management = { address_prefixes = ["10.1.7.0/24"] }
   }
 }
 

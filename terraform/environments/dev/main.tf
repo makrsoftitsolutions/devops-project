@@ -88,14 +88,15 @@ module "spoke_to_hub" {
 }
 
 resource "terraform_data" "management_vm_ssh_key_guard" {
-  count = var.enable_management_vm && (
-    var.management_admin_ssh_public_key == null ||
-    trimspace(var.management_admin_ssh_public_key) == ""
-  ) ? 1 : 0
+  input = var.management_admin_ssh_public_key
 
   lifecycle {
     precondition {
-      condition     = false
+      condition = !var.enable_management_vm || (
+        var.management_admin_ssh_public_key != null &&
+        trimspace(var.management_admin_ssh_public_key) != ""
+      )
+
       error_message = "Provide management_admin_ssh_public_key before enabling the management VM."
     }
   }
@@ -122,7 +123,7 @@ module "management_vm" {
   depends_on = [
     module.hub_to_spoke,
     module.spoke_to_hub,
-   terraform_data.management_vm_ssh_key_guard
+    terraform_data.management_vm_ssh_key_guard
   ]
 }
 
