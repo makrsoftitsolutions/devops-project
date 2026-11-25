@@ -12,6 +12,12 @@ permissions:
   contents: read
   id-token: write
   pull-requests: write
+  
+# Prevent simultaneous Terraform operations on the Dev state
+concurrency:
+  group: terraform-dev-state
+  cancel-in-progress: false
+
 
 env:
   ARM_USE_OIDC: "true"
