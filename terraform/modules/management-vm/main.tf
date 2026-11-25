@@ -43,6 +43,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   resource_group_name = var.resource_group_name
   location            = var.location
   size                = var.vm_size
+  zone                = "1"
 
   admin_username                  = var.admin_username
   disable_password_authentication = true
