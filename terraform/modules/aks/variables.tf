@@ -15,7 +15,7 @@ variable "dns_prefix" {
 }
 
 variable "kubernetes_version" {
-  type = string
+  type    = string
   default = null
 }
 variable "subnet_id" {
@@ -27,22 +27,22 @@ variable "identity_id" {
 }
 
 variable "system_node_count" {
-  type = number
+  type    = number
   default = 1
 }
 variable "system_vm_size" {
-  type = string
+  type    = string
   default = "Standard_D2s_v5"
 }
 variable "admin_group_object_ids" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 variable "log_analytics_workspace_id" {
-  type = string
+  type    = string
   default = null
 }
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

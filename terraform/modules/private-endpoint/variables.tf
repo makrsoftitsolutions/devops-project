@@ -23,11 +23,11 @@ variable "subresource_names" {
 }
 
 variable "private_dns_zone_ids" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

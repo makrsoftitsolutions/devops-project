@@ -1,11 +1,11 @@
 resource "azurerm_kubernetes_cluster" "this" {
-  name                = var.name
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  dns_prefix          = var.dns_prefix
-  kubernetes_version  = var.kubernetes_version
-  sku_tier            = "Free"
-  private_cluster_enabled = true
+  name                              = var.name
+  location                          = var.location
+  resource_group_name               = var.resource_group_name
+  dns_prefix                        = var.dns_prefix
+  kubernetes_version                = var.kubernetes_version
+  sku_tier                          = "Free"
+  private_cluster_enabled           = true
   role_based_access_control_enabled = true
 
   default_node_pool {
@@ -25,7 +25,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   dynamic "azure_active_directory_role_based_access_control" {
     for_each = length(var.admin_group_object_ids) > 0 ? [1] : []
     content {
-      azure_rbac_enabled = true
+      azure_rbac_enabled     = true
       admin_group_object_ids = var.admin_group_object_ids
     }
   }

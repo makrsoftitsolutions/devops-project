@@ -11,10 +11,10 @@ variable "resource_group_name" {
 }
 
 variable "sku" {
-  type = string
+  type    = string
   default = "Basic"
 }
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

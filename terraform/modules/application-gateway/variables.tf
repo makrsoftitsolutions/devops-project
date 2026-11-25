@@ -15,11 +15,11 @@ variable "subnet_id" {
 }
 
 variable "backend_fqdn" {
-  type = string
+  type    = string
   default = null
 }
 
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }
