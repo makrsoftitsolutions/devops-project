@@ -9,10 +9,12 @@ enable_firewall            = false
 enable_bastion             = true
 enable_application_gateway = false
 enable_acr                 = false
-enable_aks                 = false
+enable_aks                 = true
 enable_key_vault           = false
 
 acr_name       = "makrsoftdevacr001"
 key_vault_name = "kv-makrsoft-dev-001"
 
-aks_admin_group_object_ids = []
+aks_admin_group_object_ids = [
+  "0c0e6ddf-0da2-4d12-b4a1-038baffb01ad"
+]
