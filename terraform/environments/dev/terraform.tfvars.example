@@ -1,0 +1,16 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "centralindia"
+environment     = "dev"
+project         = "makrsoft"
+
+enable_log_analytics        = false
+enable_firewall             = false
+enable_bastion              = false
+enable_application_gateway  = false
+enable_acr                  = false
+enable_aks                  = false
+enable_key_vault            = false
+
+acr_name       = "replacewithuniqueacrname"
+key_vault_name = "replace-with-unique-kv-name"
+aks_admin_group_object_ids = []
