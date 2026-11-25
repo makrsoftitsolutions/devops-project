@@ -6,7 +6,7 @@ project     = "makrsoft"
 
 enable_log_analytics       = false
 enable_firewall            = false
-enable_bastion             = false
+enable_bastion             = true
 enable_application_gateway = false
 enable_acr                 = false
 enable_aks                 = false
