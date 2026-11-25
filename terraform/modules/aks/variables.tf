@@ -1,15 +1,19 @@
 variable "name" {
   type = string
 }
+
 variable "location" {
   type = string
 }
+
 variable "resource_group_name" {
   type = string
 }
+
 variable "dns_prefix" {
   type = string
 }
+
 variable "kubernetes_version" {
   type = string
   default = null
@@ -17,9 +21,11 @@ variable "kubernetes_version" {
 variable "subnet_id" {
   type = string
 }
+
 variable "identity_id" {
   type = string
 }
+
 variable "system_node_count" {
   type = number
   default = 1
@@ -36,4 +42,7 @@ variable "log_analytics_workspace_id" {
   type = string
   default = null
 }
-variable "tags" { type = map(string) default = {} }
+variable "tags" {
+  type = map(string)
+  default = {}
+}

@@ -1,6 +1,15 @@
-variable "name" { type = string }
-variable "location" { type = string }
-variable "resource_group_name" { type = string }
+variable "name" {
+  type = string
+}
+
+variable "location" {
+  type = string
+}
+
+variable "resource_group_name" {
+  type = string
+}
+
 variable "routes" {
   type = map(object({
     address_prefix         = string
@@ -9,4 +18,7 @@ variable "routes" {
   }))
   default = {}
 }
-variable "tags" { type = map(string) default = {} }
+variable "tags" {
+  type = map(string)
+  default = {}
+}

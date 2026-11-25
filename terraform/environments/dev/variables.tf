@@ -61,13 +61,40 @@ variable "spoke_subnets" {
   }
 }
 
-variable "enable_log_analytics"       { type = bool, default = false }
-variable "enable_firewall"             { type = bool, default = false }
-variable "enable_bastion"              { type = bool, default = false }
-variable "enable_application_gateway"  { type = bool, default = false }
-variable "enable_acr"                  { type = bool, default = false }
-variable "enable_aks"                  { type = bool, default = false }
-variable "enable_key_vault"            { type = bool, default = false }
+variable "enable_log_analytics"       {
+  type = bool,
+  default = false
+}
+
+variable "enable_firewall"             {
+  type = bool,
+  default = false
+}
+
+variable "enable_bastion"              {
+  type = bool,
+  default = false
+}
+
+variable "enable_application_gateway"  {
+  type = bool,
+  default = false
+}
+
+variable "enable_acr"                  {
+  type = bool,
+  default = false
+}
+
+variable "enable_aks"                  {
+  type = bool,
+  default = false
+}
+
+variable "enable_key_vault"            {
+  type = bool,
+  default = false
+}
 
 variable "acr_sku" {
   type    = string
