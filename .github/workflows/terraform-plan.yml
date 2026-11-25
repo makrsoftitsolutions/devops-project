@@ -52,6 +52,14 @@ jobs:
         run: terraform fmt -check -recursive
         working-directory: .
 
+      - name: Verify Terraform Variables
+        run: |
+          if [ ! -f terraform.tfvars ]; then
+            echo "ERROR: terraform.tfvars not found in $(pwd)"
+            exit 1
+          fi
+          echo "terraform.tfvars found"
+
       - name: Terraform Init
         run: |
           terraform init -reconfigure \
@@ -66,4 +74,4 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -no-color -var-file="terraform.tfvars"
+        run: terraform plan -no-color
