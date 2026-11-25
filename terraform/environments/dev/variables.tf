@@ -1,3 +1,4 @@
+
 variable "subscription_id" {
   description = "Azure subscription ID used by the AzureRM provider."
   type        = string
@@ -61,38 +62,38 @@ variable "spoke_subnets" {
   }
 }
 
-variable "enable_log_analytics"       {
-  type = bool,
+variable "enable_log_analytics" {
+  type    = bool
   default = false
 }
 
-variable "enable_firewall"             {
-  type = bool,
+variable "enable_firewall" {
+  type    = bool
   default = false
 }
 
-variable "enable_bastion"              {
-  type = bool,
+variable "enable_bastion" {
+  type    = bool
   default = false
 }
 
-variable "enable_application_gateway"  {
-  type = bool,
+variable "enable_application_gateway" {
+  type    = bool
   default = false
 }
 
-variable "enable_acr"                  {
-  type = bool,
+variable "enable_acr" {
+  type    = bool
   default = false
 }
 
-variable "enable_aks"                  {
-  type = bool,
+variable "enable_aks" {
+  type    = bool
   default = false
 }
 
-variable "enable_key_vault"            {
-  type = bool,
+variable "enable_key_vault" {
+  type    = bool
   default = false
 }
 
