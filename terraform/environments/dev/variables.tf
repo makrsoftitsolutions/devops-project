@@ -59,6 +59,7 @@ variable "spoke_subnets" {
     snet-appgw     = { address_prefixes = ["10.1.4.0/24"] }
     snet-private   = { address_prefixes = ["10.1.5.0/24"] }
     snet-workloads = { address_prefixes = ["10.1.6.0/24"] }
+	snet-management = { address_prefixes = ["10.1.7.0/24"] }
   }
 }
 
@@ -135,4 +136,29 @@ variable "aks_system_vm_size" {
 variable "aks_admin_group_object_ids" {
   type    = list(string)
   default = []
+}
+
+variable "enable_management_vm" {
+  description = "Enable the private Linux management VM."
+  type        = bool
+  default     = false
+}
+
+variable "management_vm_size" {
+  description = "Azure VM size."
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "management_admin_username" {
+  description = "Linux VM administrator username."
+  type        = string
+  default     = "azureadmin"
+}
+
+variable "management_admin_ssh_public_key" {
+  description = "SSH public key for management VM."
+  type        = string
+  default     = null
+  sensitive   = true
 }

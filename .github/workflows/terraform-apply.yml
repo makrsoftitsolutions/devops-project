@@ -20,6 +20,9 @@ env:
 
   # Pass subscription ID directly to Terraform
   TF_VAR_subscription_id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  
+  TF_VAR_management_admin_ssh_public_key: ${{ vars.MANAGEMENT_ADMIN_SSH_PUBLIC_KEY }}
+  TF_VAR_enable_management_vm: "true"
 
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"

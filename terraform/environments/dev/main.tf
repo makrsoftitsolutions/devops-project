@@ -87,6 +87,45 @@ module "spoke_to_hub" {
   remote_virtual_network_id = module.hub_network.id
 }
 
+resource "terraform_data" "management_vm_ssh_key_guard" {
+  count = var.enable_management_vm && (
+    var.management_admin_ssh_public_key == null ||
+    trimspace(var.management_admin_ssh_public_key) == ""
+  ) ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = false
+      error_message = "Provide management_admin_ssh_public_key before enabling the management VM."
+    }
+  }
+}
+
+module "management_vm" {
+  count  = var.enable_management_vm ? 1 : 0
+  source = "../../modules/management-vm"
+
+  name                = "vm-aks-management-${var.environment}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.spoke.name
+
+  subnet_id = module.spoke_network.subnet_ids["snet-management"]
+
+  admin_username       = var.management_admin_username
+  admin_ssh_public_key = var.management_admin_ssh_public_key
+  vm_size              = var.management_vm_size
+
+  bastion_subnet_cidr = "10.0.2.0/26"
+
+  tags = local.common_tags
+
+  depends_on = [
+    module.hub_to_spoke,
+    module.spoke_to_hub
+   terraform_data.management_vm_ssh_key_guard
+  ]
+}
+
 module "log_analytics" {
   count               = var.enable_log_analytics ? 1 : 0
   source              = "../../modules/log-analytics"
@@ -236,4 +275,20 @@ output "aks_name" {
 
 output "key_vault_uri" {
   value = var.enable_key_vault ? module.key_vault[0].vault_uri : null
+}
+
+output "management_vm_name" {
+  value = var.enable_management_vm ? module.management_vm[0].vm_name : null
+}
+
+output "management_vm_id" {
+  value = var.enable_management_vm ? module.management_vm[0].vm_id : null
+}
+
+output "management_vm_private_ip" {
+  value = var.enable_management_vm ? module.management_vm[0].private_ip_address : null
+}
+
+output "management_vm_principal_id" {
+  value = var.enable_management_vm ? module.management_vm[0].principal_id : null
 }
