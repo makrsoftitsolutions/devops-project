@@ -121,7 +121,7 @@ module "management_vm" {
 
   depends_on = [
     module.hub_to_spoke,
-    module.spoke_to_hub
+    module.spoke_to_hub,
    terraform_data.management_vm_ssh_key_guard
   ]
 }
