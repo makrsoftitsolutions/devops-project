@@ -407,7 +407,7 @@ variable "aks_system_node_count" {
 
 variable "aks_system_vm_size" {
   type    = string
-  default = "Standard_D2s_v5"
+  default = "Standard_D2as_v7"
 }
 
 variable "aks_user_node_pool_name" {
@@ -419,7 +419,7 @@ variable "aks_user_node_pool_name" {
 variable "aks_user_node_pool_vm_size" {
   description = "AKS-compatible Azure VM size for the user node pool."
   type        = string
-  default     = "Standard_D2s_v5"
+  default     = "Standard_D2as_v7"
 }
 
 variable "enable_aks_user_node_pool" {
@@ -437,7 +437,7 @@ variable "aks_user_node_pool_min_count" {
 variable "aks_user_node_pool_max_count" {
   description = "Maximum number of nodes for autoscaling in the AKS user pool."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "aks_admin_group_object_ids" {
@@ -454,7 +454,7 @@ variable "enable_management_vm" {
 variable "management_vm_size" {
   description = "Azure VM size."
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_D2as_v7"
 }
 
 variable "management_vm_zone" {

@@ -44,7 +44,7 @@ variable "system_node_count" {
 }
 variable "system_vm_size" {
   type    = string
-  default = "Standard_D2s_v5"
+  default = "Standard_D2as_v7"
 }
 variable "user_node_pool_name" {
   description = "Name for the Linux user node pool (1-12 lowercase alphanumeric characters)."
@@ -59,7 +59,7 @@ variable "user_node_pool_name" {
 variable "user_node_pool_vm_size" {
   description = "AKS-compatible Azure VM SKU for the user node pool."
   type        = string
-  default     = "Standard_EC2as_v5"
+  default     = "Standard_D2as_v7"
 }
 variable "enable_user_node_pool" {
   description = "Whether to create the autoscaling AKS user node pool."
@@ -77,7 +77,7 @@ variable "user_node_pool_min_count" {
 }
 variable "user_node_pool_max_count" {
   type    = number
-  default = 2
+  default = 1
 
   validation {
     condition     = var.user_node_pool_max_count >= var.user_node_pool_min_count

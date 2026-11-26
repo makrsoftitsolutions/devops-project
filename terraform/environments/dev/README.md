@@ -7,12 +7,12 @@ The shared Terraform root is in `terraform/root`. This folder contains only the 
 | Component | Configuration |
 | --- | --- |
 | Hub and spoke VNets | `10.0.0.0/16` and `10.1.0.0/16`, with subnets defined in `terraform.tfvars` |
-| Management VM | Enabled, private, `Standard_B2s`, with regional placement and a pre-created user-assigned identity |
-| Azure Bastion | Enabled in the hub |
+| Management VM | Disabled to stay within the subscription's 4-vCPU quota |
+| Azure Bastion | Enabled in the hub; no management VM currently uses it |
 | ACR | Enabled; admin account disabled |
 | AKS | Enabled; private cluster with pre-created user-assigned control-plane and kubelet identities |
-| AKS system pool | One node; `Standard_D2s_v3` |
-| AKS user pool | Enabled; `Standard_D2s_v3`, autoscale 0–2, starts at zero nodes |
+| AKS system pool | One `Standard_D2as_v7` node (2 vCPUs) |
+| AKS user pool | One `Standard_D2as_v7` node (2 vCPUs), max count 1 |
 | Azure Firewall | Disabled to preserve the limited regional public IP quota; its separate management IP is optional and off unless forced tunneling is required |
 | Application Gateway | Disabled to preserve the limited regional public IP quota; backend FQDN is unset |
 | Log Analytics | Enabled and connected to AKS monitoring |
@@ -27,9 +27,9 @@ The shared Terraform root is in `terraform/root`. This folder contains only the 
 
 PostgreSQL, Storage, Event Hubs, Service Bus, and Application Insights are disabled in dev by default. Azure Monitor Private Link is enabled for the existing Log Analytics workspace. Review the plan, SKU availability, recurring private-endpoint costs, and app identity/RBAC before enabling other services. PostgreSQL additionally needs `POSTGRES_ADMIN_PASSWORD` configured in the protected `dev`, `dev-bootstrap`, and `dev-destroy` GitHub Environments. Do not place that password in `terraform.tfvars`. Generated PostgreSQL, Storage, Event Hubs, and Service Bus names may need environment-specific overrides for global uniqueness.
 
-East US is selected after comparing the live subscription limits and VM size catalogs in East US, UK South, Southeast Asia, and South India. On 2026-11-26, Azure listed 1,698 VM size entries in East US, 1,362 in UK South, 1,299 in Southeast Asia, and 1,120 in South India. The subscription's limits were also the same in each checked region: 4 regional vCPUs, 4 DSv5-family vCPUs, and 3 public IP addresses. The broader East US SKU catalog therefore does not increase this subscription's quota or guarantee compute capacity. The configured AKS system pool and management VM each use 2 vCPUs, consuming the 4-vCPU quota; the user pool starts at zero and cannot scale until quota is increased or another VM is removed.
+East US is selected after comparing the live subscription limits and VM size catalogs in East US, UK South, Southeast Asia, and South India. On 2026-11-26, Azure reported a 4-vCPU regional quota and a 4-vCPU `Dasv7` family quota. The current dev configuration uses one 2-vCPU `Standard_D2as_v7` system node and one 2-vCPU user node, consuming that quota. The management VM is disabled; the user pool is capped at one node. Azure's VM SKU API showed `Standard_D2as_v7` available to this subscription in East US, but a plan cannot guarantee physical capacity at apply time. Re-enable the management VM or scale the user pool only after increasing quota.
 
-The previous apply was rejected because `Standard_D2s_v5` is disallowed for AKS and `Standard_B2als_v2` had no zone-1 capacity. Dev now uses `Standard_D2s_v3` for both AKS pools and regional `Standard_B2s` placement for the management VM. A subscription policy or capacity rejection may still require an administrator-approved alternative SKU. Key Vault now uses `kv-makrsoft-dev-002` because `kv-makrsoft-dev-001` is held in a purge-protected deleted-vault record.
+The previous apply was rejected because `Standard_D2as_v5`, `Standard_D4s_v5`, and `Standard_B2s` are restricted for this subscription in East US. Dev now uses the allowed `Standard_D2as_v7` SKU for both AKS pools. Azure Bastion remains enabled but has no management VM to connect to; disable it if it has no other use to avoid its ongoing charge. Key Vault uses `kv-makrsoft-dev-002` because `kv-makrsoft-dev-001` is held in a purge-protected deleted-vault record.
 
 ## Environment inputs and naming
 
@@ -50,8 +50,8 @@ Terraform orders dependent services from resource references and explicit depend
 1. Resource groups, VNets, and subnets.
 2. NSGs, route tables, and VNet peerings.
 3. Network and workload identities and their required role assignments.
-4. Management VM, ACR, AKS, optional Firewall/Bastion/Application Gateway, and Key Vault.
-5. AKS ACR-pull and management-VM role assignments after their principals and scopes exist.
+4. ACR, AKS, optional management VM/Firewall/Bastion/Application Gateway, and Key Vault.
+5. AKS ACR-pull and any enabled management-VM role assignments after their principals and scopes exist.
 6. Private DNS zones and VNet links before their private endpoints; PostgreSQL waits for its DNS link and uses a delegated subnet.
 7. Application Insights and diagnostic settings after the Log Analytics workspace exists.
 

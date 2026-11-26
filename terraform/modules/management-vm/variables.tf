@@ -34,7 +34,7 @@ variable "admin_ssh_public_key" {
 
 variable "vm_size" {
   type    = string
-  default = "Standard_B2s"
+  default = "Standard_D2as_v7"
 }
 
 variable "user_assigned_identity_id" {
