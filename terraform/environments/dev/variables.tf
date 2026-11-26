@@ -168,3 +168,9 @@ variable "enable_aks_acr_pull" {
   type        = bool
   default     = false
 }
+
+variable "deployment_principal_object_id" {
+  description = "Optional object ID of the deployment service principal to authorize for ACR role assignments. Defaults to the identity running Terraform."
+  type        = string
+  default     = null
+}

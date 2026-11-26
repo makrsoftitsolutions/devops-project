@@ -194,6 +194,21 @@ resource "azurerm_role_assignment" "aks_network_contributor" {
   principal_type       = "ServicePrincipal"
 }
 
+# Allows the deployment identity to create the AKS AcrPull assignment on this
+# registry. The first creation must be bootstrapped by an identity that already
+# has roleAssignments/write permission at this scope.
+resource "azurerm_role_assignment" "deployment_acr_rbac_admin" {
+  count = (
+    var.enable_acr &&
+    var.enable_aks_acr_pull
+  ) ? 1 : 0
+
+  scope                = module.acr[0].id
+  role_definition_name = "Role Based Access Control Administrator"
+  principal_id         = coalesce(var.deployment_principal_object_id, data.azurerm_client_config.current.object_id)
+  principal_type       = "ServicePrincipal"
+}
+
 module "aks" {
   count                      = var.enable_aks ? 1 : 0
   source                     = "../../modules/aks"
@@ -222,9 +237,11 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   scope                = module.acr[0].id
   role_definition_name = "AcrPull"
 
-  principal_id         = module.aks[0].kubelet_identity_object_id
+  principal_id = module.aks[0].kubelet_identity_object_id
 
-  principal_type       = "ServicePrincipal"
+  principal_type = "ServicePrincipal"
+
+  depends_on = [azurerm_role_assignment.deployment_acr_rbac_admin]
 }
 
 module "key_vault" {

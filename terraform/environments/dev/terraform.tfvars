@@ -11,6 +11,7 @@ enable_application_gateway      = false
 enable_acr                      = true
 enable_aks                      = true
 enable_aks_acr_pull             = true
+deployment_principal_object_id  = "33bf4292-01a6-45ef-a0be-8ce660ae9b53"
 enable_key_vault                = false
 enable_management_vm            = true
 management_vm_size              = "Standard_B2als_v2"
