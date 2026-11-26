@@ -5,6 +5,8 @@ variable "assignments" {
     role_definition_name = string
     principal_id         = string
     principal_type       = optional(string, "ServicePrincipal")
+    condition            = optional(string)
+    condition_version    = optional(string)
   }))
   default = {}
 }

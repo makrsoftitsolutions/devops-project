@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     env:
-      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_NAME: ${{ vars.ACR_NAME || 'makrsoftdevacr001' }}
       IMAGE_NAME: nginx-demo
       IMAGE_TAG: ${{ github.sha }}
 
@@ -56,4 +56,4 @@ jobs:
           context: ./docker
           file: ./docker/Dockerfile
           push: true
-          tags: ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}

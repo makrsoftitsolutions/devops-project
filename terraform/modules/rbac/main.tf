@@ -5,4 +5,6 @@ resource "azurerm_role_assignment" "this" {
   role_definition_name = each.value.role_definition_name
   principal_id         = each.value.principal_id
   principal_type       = each.value.principal_type
+  condition            = each.value.condition
+  condition_version    = each.value.condition_version
 }

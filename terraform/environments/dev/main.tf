@@ -8,6 +8,12 @@ locals {
   hub_rg_name   = "rg-network-${var.environment}"
   spoke_rg_name = "rg-platform-${var.environment}"
 
+  management_vm_aks_rbac_role_definition_id = {
+    "Azure Kubernetes Service RBAC Reader"        = "7f6c6a51-bcf8-42ba-9220-52d62157d7db"
+    "Azure Kubernetes Service RBAC Writer"        = "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb"
+    "Azure Kubernetes Service RBAC Cluster Admin" = "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b"
+  }[var.management_vm_aks_rbac_role]
+
   workload_routes = var.enable_workload_firewall_default_route ? {
     default_to_firewall = {
       address_prefix         = "0.0.0.0/0"
@@ -295,6 +301,34 @@ module "rbac_aks_acr_pull" {
   depends_on = [module.rbac_deployment_acr_admin]
 }
 
+# Delegates only the role assignments required by the management VM, and only
+# for that VM's identity. Bootstrap this grant with an already authorized Azure
+# identity; the GitHub identity cannot create its own initial authorization.
+module "rbac_deployment_management" {
+  count  = var.enable_management_vm && var.enable_aks ? 1 : 0
+  source = "../../modules/rbac"
+
+  assignments = {
+    deployment_manage_vm_roles = {
+      scope                = azurerm_resource_group.spoke.id
+      role_definition_name = "Role Based Access Control Administrator"
+      principal_id         = var.deployment_principal_object_id
+      condition_version    = "2.0"
+      condition = format(
+        "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {%s, %s, %s} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {%s, %s, %s} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s}))",
+        "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+        "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
+        local.management_vm_aks_rbac_role_definition_id,
+        module.management_vm[0].principal_id,
+        "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+        "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
+        local.management_vm_aks_rbac_role_definition_id,
+        module.management_vm[0].principal_id
+      )
+    }
+  }
+}
+
 module "rbac_management_vm" {
   count  = var.enable_management_vm ? 1 : 0
   source = "../../modules/rbac"
@@ -320,6 +354,8 @@ module "rbac_management_vm" {
       }
     } : {}
   )
+
+  depends_on = [module.rbac_deployment_management]
 }
 
 # Preserve existing role assignment state while moving the resources into the reusable module.

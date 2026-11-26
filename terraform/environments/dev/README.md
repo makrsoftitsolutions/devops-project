@@ -37,7 +37,7 @@ Terraform manages these assignments through the reusable `terraform/modules/rbac
 | `management_vm_aks_cluster_user` | Management VM system-assigned identity | AKS cluster | Allows downloading a user kubeconfig |
 | `management_vm_aks_rbac` | Management VM system-assigned identity | AKS cluster | Read-only Kubernetes API access by default |
 
-The deployment identity's `Role Based Access Control Administrator` assignment is limited to the ACR resource. It is required because Terraform creates the `AcrPull` and `AcrPush` assignments. This role is broader than either registry data role; review its scope and role assignment conditions against your production access policy.
+The deployment identity's existing `Role Based Access Control Administrator` assignment is limited to the ACR resource. It is required because Terraform creates the `AcrPull` and `AcrPush` assignments. A second, condition-constrained assignment is defined for the platform resource group so GitHub Actions can manage only the management VM's Reader and AKS role assignments.
 
 The GitHub deployment service principal was checked and currently has `Contributor` at subscription scope, `Storage Blob Data Contributor` on the Terraform state storage account, and `Role Based Access Control Administrator` on the ACR. Subscription-level `Contributor` supplies the Azure resource write permissions needed to create the Firewall and Application Gateway. Terraform does not create that subscription-level `Contributor` grant; it must remain assigned through the organization's identity governance process.
 
@@ -47,17 +47,19 @@ The GitHub deployment service principal was checked and currently has `Contribut
 
 The management VM's system-assigned identity is granted Azure `Reader` on the platform resource group, the AKS Cluster User role, and `Azure Kubernetes Service RBAC Reader` on the cluster. The Kubernetes role can be changed with `management_vm_aks_rbac_role`; use `Azure Kubernetes Service RBAC Writer` only if the VM needs to deploy or change workloads.
 
-The first creation of these role assignments must run under an identity that already has role-assignment write permission on the platform resource group and AKS resource, and access to the Terraform remote state. The GitHub deployment identity currently has `Contributor` at subscription scope, which does not include permission to create role assignments at these scopes. From PowerShell in this directory, sign in with an authorized Azure identity and run:
+The GitHub deployment identity cannot grant itself permission to create role assignments. Before GitHub Actions can create the management VM assignments, bootstrap its constrained RBAC delegation once with an Azure identity that already has role-assignment write permission on `rg-platform-dev`. That delegation is limited to assigning `Reader`, `Azure Kubernetes Service Cluster User Role`, and the configured AKS RBAC role to the management VM identity at this resource group or its child scopes. It cannot assign these roles to other principals. The same authorized identity needs access to the Terraform remote state. From PowerShell in this directory, run:
 
 ```powershell
 az login
 az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
 terraform init -reconfigure -backend-config="backend.hcl"
-terraform apply `
-  -target='module.rbac_management_vm'
+terraform plan -target='module.rbac_deployment_management'
+terraform apply -target='module.rbac_deployment_management'
 ```
 
-After the assignments are created, use the VM identity instead of interactive device login:
+Review the plan and confirm it grants the GitHub deployment principal the condition-constrained role at `rg-platform-dev`. Once the bootstrap apply succeeds, rerun **Actions > Terraform Apply**; GitHub Actions can then create the management VM assignments in the shared state. Subsequent applies use the normal workflow.
+
+Use the VM identity instead of interactive device login after the role assignments have been applied:
 
 ```bash
 az login --identity
@@ -78,7 +80,7 @@ The AKS ingress endpoint has not been deployed yet, so `application_gateway_back
 
 ### One-time Terraform bootstrap
 
-Azure does not allow a deployment identity to grant itself permission to create role assignments. The first creation of `deployment_acr_rbac_admin` must therefore run as an Azure identity that already has role-assignment write permission at the ACR scope. This is a one-time Terraform bootstrap; it does not require creating the assignment manually in the Azure portal.
+Azure does not allow a deployment identity to grant itself permission to create role assignments. The first creation of `deployment_acr_rbac_admin` must therefore run as an Azure identity that already has role-assignment write permission at the ACR scope. This is a one-time Terraform bootstrap; it does not require creating the assignment manually in the Azure portal. The management VM delegation has its own one-time Terraform bootstrap at the platform resource group.
 
 From PowerShell, in this directory, sign in with that authorized identity. It must also be able to read and write the configured Terraform remote state:
 
