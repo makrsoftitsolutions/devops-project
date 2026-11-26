@@ -45,6 +45,9 @@ jobs:
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
             -backend-config="key=${{ vars.TF_BACKEND_KEY }}" \
             -backend-config="use_azuread_auth=true"
+      - name: Identify Pipeline RBAC Assignment
+        run: |
+          terraform state list | grep azurerm_role_assignment
       - run: terraform plan -destroy -out=destroy.tfplan
       - run: terraform show destroy.tfplan
       - run: terraform apply -auto-approve destroy.tfplan
