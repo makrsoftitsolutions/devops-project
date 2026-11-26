@@ -213,10 +213,17 @@ module "aks" {
 }
 
 resource "azurerm_role_assignment" "aks_acr_pull" {
-  count                = var.enable_aks && var.enable_acr ? 1 : 0
+  count = (
+    var.enable_aks &&
+    var.enable_acr &&
+    var.enable_aks_acr_pull
+  ) ? 1 : 0
+
   scope                = module.acr[0].id
   role_definition_name = "AcrPull"
+
   principal_id         = module.aks[0].kubelet_identity_object_id
+
   principal_type       = "ServicePrincipal"
 }
 

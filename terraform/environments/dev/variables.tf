@@ -162,3 +162,9 @@ variable "management_admin_ssh_public_key" {
   default     = null
   sensitive   = true
 }
+
+variable "enable_aks_acr_pull" {
+  description = "Enable AcrPull assignment for the AKS kubelet identity."
+  type        = bool
+  default     = false
+}
