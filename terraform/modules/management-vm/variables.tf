@@ -16,6 +16,11 @@ variable "subnet_id" {
   type        = string
 }
 
+variable "network_security_group_name" {
+  description = "Environment-specific network security group name for the management VM."
+  type        = string
+}
+
 variable "admin_username" {
   type    = string
   default = "azureadmin"
@@ -30,6 +35,12 @@ variable "admin_ssh_public_key" {
 variable "vm_size" {
   type    = string
   default = "Standard_B2s"
+}
+
+variable "zone" {
+  description = "Availability zone for the management VM, or null for regional placement."
+  type        = string
+  default     = null
 }
 
 variable "bastion_subnet_cidr" {

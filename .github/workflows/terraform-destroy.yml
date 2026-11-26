@@ -1,11 +1,17 @@
-
 name: Terraform Destroy (manual)
 
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: Environment to destroy
+        required: true
+        type: choice
+        options:
+          - dev
+        default: dev
       confirm_destroy:
-        description: "Type DESTROY to confirm infrastructure deletion"
+        description: Type DESTROY to confirm infrastructure deletion
         required: true
         type: string
 
@@ -13,75 +19,182 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  ARM_USE_OIDC: true
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-  TF_IN_AUTOMATION: true
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
 
 jobs:
-  destroy:
-    if: ${{ inputs.confirm_destroy == 'DESTROY' }}
+  validate-confirmation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit destroy confirmation
+        env:
+          CONFIRM_DESTROY: ${{ inputs.confirm_destroy }}
+        shell: bash
+        run: |
+          if [[ "$CONFIRM_DESTROY" != "DESTROY" ]]; then
+            echo "Type DESTROY in the workflow input to continue."
+            exit 1
+          fi
+
+  plan-destroy:
+    needs: validate-confirmation
     runs-on: ubuntu-latest
     environment: dev
 
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+      TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+      TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+      TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
     defaults:
       run:
-        working-directory: terraform/environments/dev
+        working-directory: terraform/root
 
     steps:
-      # 1. Checkout repository
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Azure OIDC Login
-      - name: Azure Login
+      - name: Verify dev configuration
+        shell: bash
+        run: |
+          config="../environments/dev/terraform.tfvars"
+          test -f "$config" || { echo "Missing $config"; exit 1; }
+          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
+          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
+          if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
+            echo "Set ARM_* and TF_BACKEND_* variables in the dev GitHub Environment."
+            exit 1
+          fi
+
+      - name: Azure Login using OIDC
         uses: azure/login@v2
         with:
+          auth-type: SERVICE_PRINCIPAL
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
-      # 3. Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
 
-      # 4. Initialize remote backend
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
       - name: Terraform Init
         run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
-            -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
-            -backend-config="key=${{ vars.TF_BACKEND_KEY }}" \
-            -backend-config="use_azuread_auth=true"
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
+            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
 
-      # 5. Verify Terraform state
+      - name: Terraform Validate
+        run: terraform validate
+
       - name: Verify Terraform State
-        run: |
-          echo "Current Terraform resources:"
-          terraform state list
+        run: terraform state list
 
-      # 6. Generate destroy plan
-      - name: Terraform Destroy Plan
-        run: |
-          terraform plan -destroy -out=destroy.tfplan
+      - name: Create destroy plan
+        run: terraform plan -input=false -var-file="../environments/dev/terraform.tfvars" -destroy -out=destroy.tfplan
 
-      # 7. Review destroy plan
-      - name: Review Destroy Plan
-        run: |
-          terraform show destroy.tfplan
+      - name: Show destroy plan
+        run: terraform show -no-color destroy.tfplan
 
-      # 8. Execute destroy
-      - name: Terraform Destroy Apply
-        run: |
-          terraform apply -auto-approve destroy.tfplan
+      - name: Upload reviewed destroy plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-destroy-plan
+          path: terraform/root/destroy.tfplan
+          retention-days: 1
+          if-no-files-found: error
 
-      # 9. Completion
-      - name: Destroy Summary
+  apply-destroy:
+    needs: plan-destroy
+    runs-on: ubuntu-latest
+    environment: dev-destroy
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.DESTROY_ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.DESTROY_ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.DESTROY_ARM_SUBSCRIPTION_ID }}
+      TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+      TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+      TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+      TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    defaults:
+      run:
+        working-directory: terraform/root
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify destroy identity configuration
+        shell: bash
+        run: |
+          config="../environments/dev/terraform.tfvars"
+          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
+          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "DESTROY_ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
+          if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
+            echo "Set DESTROY_ARM_* and TF_BACKEND_* variables in the dev-destroy GitHub Environment."
+            exit 1
+          fi
+
+      - name: Azure Login using destroy OIDC identity
+        uses: azure/login@v2
+        with:
+          auth-type: SERVICE_PRINCIPAL
+          client-id: ${{ vars.DESTROY_ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.DESTROY_ARM_TENANT_ID }}
+          subscription-id: ${{ vars.DESTROY_ARM_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
+            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Download destroy plan
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-destroy-plan
+          path: terraform/root
+
+      - name: Apply approved destroy plan
+        run: terraform apply -input=false -auto-approve destroy.tfplan
+
+      - name: Destroy summary
         if: success()
-        run: |
-          echo "Terraform destroy completed successfully."
+        run: echo "Terraform destroy completed successfully."

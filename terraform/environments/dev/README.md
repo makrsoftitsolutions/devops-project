@@ -1,159 +1,93 @@
-# Dev environment
+# Dev environment configuration
 
-This directory contains the Terraform root module for the `dev` Azure environment. It provisions the platform using a hub-and-spoke network, modular Terraform, and GitHub Actions with Microsoft Entra Workload Identity Federation (OIDC).
+The shared Terraform root is in `terraform/root`. This folder contains only the dev inputs and local backend settings. Resource names are derived from `project` and `environment`; the dev formulas preserve existing names such as `rg-platform-dev`, `aks-dev-platform`, `makrsoftdevacr001`, and `kv-makrsoft-dev-001`.
 
-## Current configuration
+## Dev resources
 
-The values in `terraform.tfvars` enable:
-
-| Component | State | Notes |
-| --- | --- | --- |
-| Hub and spoke VNets, subnets, peering | Enabled | Hub: `10.0.0.0/16`; spoke: `10.1.0.0/16`; includes `AzureFirewallManagementSubnet` (`10.0.3.0/26`) for Firewall Basic |
-| Workload NSG and route table | Enabled | Associated with the workloads subnet |
-| Azure Bastion | Enabled | Deployed in the hub |
-| Management VM | Enabled | Private VM in the spoke; access via Bastion |
-| Azure Container Registry (ACR) | Enabled | Admin account disabled |
-| Azure Kubernetes Service (AKS) | Enabled | Private cluster with a user-assigned control-plane identity |
-| AKS user node pool | Enabled in Terraform, initially at zero nodes | `usernodepl1`; autoscaler is configured for 0–2 `Standard_EC2as_v5` nodes using Azure Linux; scaling above zero requires Central India regional and ECasv5-family vCPU quota |
-| AKS network permission | Enabled | AKS identity has `Network Contributor` on the AKS subnet |
-| AKS image pull permission | Enabled | `AcrPull` is granted to the AKS kubelet identity on ACR |
-| Azure Firewall | Temporarily disabled | `enable_firewall = false` while the subscription is at its Central India public IP quota; re-enable after quota is increased |
-| Application Gateway | Temporarily disabled | `enable_application_gateway = false` while the subscription is at its Central India public IP quota; re-enable after quota is increased |
-| Log Analytics | Enabled | `enable_log_analytics = true`; connected to AKS monitoring |
-| Key Vault | Enabled | RBAC authorization is enabled; public access is disabled and access uses a private endpoint with private DNS |
-
-Change these options in `terraform.tfvars` to enable or disable optional resources. `enable_aks_acr_pull` independently controls the AKS kubelet `AcrPull` assignment, subject to both AKS and ACR being enabled.
-
-## Azure role assignments
-
-Terraform manages these assignments through the reusable `terraform/modules/rbac` module. Stable assignment keys and root-level `moved` blocks preserve the existing state when assignments move into the module:
-
-| Assignment | Principal | Scope | Purpose |
-| --- | --- | --- | --- |
-| `aks_network_contributor` | AKS user-assigned control-plane identity | AKS subnet | Allows AKS to manage the required network resources |
-| `deployment_acr_rbac_admin` | GitHub Actions deployment service principal | ACR resource | Allows the deployment identity to manage ACR role assignments |
-| `deployment_acr_push` | GitHub Actions deployment service principal | ACR resource | Allows the image build workflow to push images |
-| `aks_acr_pull` | AKS kubelet identity | ACR resource | Allows AKS nodes to pull container images |
-| `management_vm_resource_reader` | Management VM system-assigned identity | Platform resource group | Allows Azure CLI to discover and read dev resources |
-| `management_vm_aks_cluster_user` | Management VM system-assigned identity | AKS cluster | Allows downloading a user kubeconfig |
-| `management_vm_aks_rbac` | Management VM system-assigned identity | AKS cluster | `Azure Kubernetes Service RBAC Cluster Admin` for read/write cluster administration |
-
-The deployment identity's existing `Role Based Access Control Administrator` assignment is limited to the ACR resource. It is required because Terraform creates the `AcrPull` and `AcrPush` assignments. A second, condition-constrained assignment is defined for the platform resource group so GitHub Actions can manage only the management VM's Reader and AKS role assignments.
-
-The GitHub deployment service principal was checked and currently has `Contributor` at subscription scope, `Storage Blob Data Contributor` on the Terraform state storage account, and `Role Based Access Control Administrator` on the ACR. Subscription-level `Contributor` supplies the Azure resource write permissions needed to create the Firewall and Application Gateway. Terraform does not create that subscription-level `Contributor` grant; it must remain assigned through the organization's identity governance process.
-
-`enable_acr_push` controls the Terraform-managed `AcrPush` assignment for the deployment service principal. Apply Terraform before running the image build workflow so this permission exists.
-
-### Use the management VM to access AKS
-
-The management VM's system-assigned identity is granted Azure `Reader` on the platform resource group, the AKS Cluster User role, and `Azure Kubernetes Service RBAC Cluster Admin` on the cluster. This permits cluster-wide read/write operations, including listing nodes. It is a powerful permission; change `management_vm_aks_rbac_role` to Reader or Writer if full cluster administration is not needed. The GitHub deployment identity's ABAC condition limits this delegated role to the management VM identity and the three supported AKS RBAC roles.
-
-The GitHub deployment identity cannot grant itself permission to create role assignments. Each time the allowed AKS role list changes, update the delegation with an Azure identity that already has role-assignment write permission on `rg-platform-dev` before running GitHub Actions. The delegation is limited to assigning `Reader`, `Azure Kubernetes Service Cluster User Role`, and one of the allowed AKS RBAC roles to the management VM identity at this resource group or its child scopes. It cannot assign these roles to other principals. The same authorized identity needs access to the Terraform remote state. From PowerShell in this directory, run:
-
-```powershell
-az login
-az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
-terraform init -reconfigure -backend-config="backend.hcl"
-terraform plan -target='module.rbac_deployment_management'
-terraform apply -target='module.rbac_deployment_management'
-```
-
-Review the plan and confirm it grants the GitHub deployment principal the condition-constrained role at `rg-platform-dev`. Once the bootstrap apply succeeds, rerun **Actions > Terraform Apply**; GitHub Actions can then create the management VM assignments in the shared state. Subsequent applies use the normal workflow.
-
-Use the VM identity instead of interactive device login after the role assignments have been applied:
-
-```bash
-az login --identity
-az account show --output table
-az aks get-credentials --resource-group rg-platform-dev --name aks-dev-platform --overwrite-existing
-kubectl get nodes
-```
-
-The VM is in the spoke VNet and can reach the private AKS API endpoint. If `az login --identity` still reports no subscriptions, confirm the Reader assignment exists for the VM identity. `AADSTS530035` during a personal interactive login is a separate Microsoft Entra security-defaults block; do not disable security defaults to work around it. Use an authorized organizational identity or the VM's managed identity.
-
-The Application Gateway subnet is dedicated and currently has no NSG or route-table association. Firewall deployment is temporarily disabled while the subscription's public IP quota is full. When it is re-enabled, no workload UDR will route through it unless `enable_workload_firewall_default_route` is also enabled after firewall egress rules are configured.
-
-`enable_workload_firewall_default_route` defaults to `false`. Enable it only after the firewall policy has allow rules for required workload and AKS egress. When enabled, Terraform routes the workloads subnet's `0.0.0.0/0` traffic to the Firewall private IP. The AKS subnet is not associated with this route table.
-
-Key Vault uses `privatelink.vaultcore.azure.net`, linked to the spoke VNet, and the private endpoint is placed in `snet-private`. The management VM can resolve the private vault address through the spoke link. Any other client network that needs vault access must also have a suitable DNS and network path.
-
-The AKS user pool is enabled in `terraform.tfvars` and configured to autoscale between zero and two `Standard_EC2as_v5` nodes with the `AzureLinux` OS SKU. Its initial node count is explicitly set to zero so AKS can create the user pool without allocating additional VM cores, and Terraform ignores later service-managed node-count changes. The pool can scale above zero only when the subscription has regional and ECasv5-family quota available; with current regional usage at 4/4, pods that trigger scale-up will remain pending until quota is increased. The VM size is explicitly set in `aks_user_node_pool_vm_size` so it can be changed to another available SKU without modifying module code. The supplied Central India SKU list marks this 2-vCPU, 16-GiB AMD SEV-SNP confidential VM size as unrestricted for this subscription, with availability in zones 2 and 3; it is the only 2-vCPU size in that list without a subscription/zone restriction. AKS supports confidential VM node pools with Azure Linux 3.0, and selecting this size enables confidential VM behavior automatically. The current quota output shows 4 of 4 total regional vCPUs in use: 2 for the `Standard_B2als_v2` management VM and 2 for the AKS `Standard_D2s_v5` system node. ECASv5 family usage is 0 of 4. Linux AKS node pool names are limited to 12 lowercase alphanumeric characters, so the requested `usernodepool1` is represented by `usernodepl1`.
-
-The AKS ingress endpoint has not been deployed yet, so `application_gateway_backend_fqdn` remains `null`. Set it to the ingress FQDN after deployment before directing application traffic through the gateway.
-
-### One-time Terraform bootstrap
-
-Azure does not allow a deployment identity to grant itself permission to create role assignments. The first creation of `deployment_acr_rbac_admin` must therefore run as an Azure identity that already has role-assignment write permission at the ACR scope. This is a one-time Terraform bootstrap; it does not require creating the assignment manually in the Azure portal. The management VM delegation has its own one-time Terraform bootstrap at the platform resource group.
-
-From PowerShell, in this directory, sign in with that authorized identity. It must also be able to read and write the configured Terraform remote state:
-
-```powershell
-az login
-az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
-terraform init -reconfigure -backend-config="backend.hcl"
-terraform plan -target='module.rbac_deployment_acr_admin'
-terraform apply -target='module.rbac_deployment_acr_admin'
-```
-
-Before approving the plan, confirm the target is the GitHub Actions service principal and the scope is the intended ACR. The target option is used only for this initial bootstrap. Terraform stores the resulting assignment in the remote state.
-
-After the bootstrap succeeds, commit and push the Terraform changes, then run **Actions > Terraform Apply > Run workflow**. The workflow authenticates as the GitHub OIDC deployment identity, creates the registry data-role assignments, and applies other pending changes. Subsequent applies use the normal workflow without the `-target` option.
-
-If the bootstrap must run entirely in GitHub Actions, use a separate OIDC identity that already has role-assignment write permission on the ACR. The current deployment identity cannot bootstrap its own authorization.
-
-## Terraform state
-
-Terraform state uses the Azure Storage backend configured by `backend.hcl` and `backend.tf`:
-
-| Setting | Value |
+| Component | Configuration |
 | --- | --- |
-| Resource group | `rg-tfstate-devops` |
-| Storage account | `stmakrdevops001` |
-| Container | `tfstate` |
-| State key | `dev.terraform.tfstate` |
+| Hub and spoke VNets | `10.0.0.0/16` and `10.1.0.0/16`, with subnets defined in `terraform.tfvars` |
+| Management VM | Enabled, private, `Standard_B2als_v2`, in zone 1 |
+| Azure Bastion | Enabled in the hub |
+| ACR | Enabled; admin account disabled |
+| AKS | Enabled; private cluster with user-assigned control-plane identity |
+| AKS user pool | Enabled; `Standard_EC2as_v5`, autoscale 0–2, starts at zero nodes |
+| Azure Firewall | Disabled while the subscription's public IP quota is exhausted |
+| Application Gateway | Disabled while the subscription's public IP quota is exhausted; backend FQDN is unset |
+| Log Analytics | Enabled and connected to AKS monitoring |
+| Key Vault | Enabled with RBAC, private endpoint, and private DNS |
+| PostgreSQL Flexible Server | Optional; VNet-injected in a delegated subnet with private DNS |
+| Storage Account | Optional; public access disabled and Blob private endpoint/DNS enabled |
+| Event Hubs | Optional; namespace and hub use private endpoint/DNS |
+| Service Bus | Optional; namespace and queue use private endpoint/DNS |
+| Application Insights | Optional; linked to Log Analytics |
+| Azure Monitor diagnostics | Diagnostic settings send enabled service logs to Log Analytics |
+| Azure Monitor Private Link | Enabled for Log Analytics with an AMPLS private endpoint and five DNS zones |
 
-The GitHub Actions identity needs Azure AD/OIDC access to the state container, typically through `Storage Blob Data Contributor`, in addition to the Azure resource permissions required by the configuration.
+PostgreSQL, Storage, Event Hubs, Service Bus, and Application Insights are disabled in dev by default. Azure Monitor Private Link is enabled for the existing Log Analytics workspace. Review the plan, SKU availability, recurring private-endpoint costs, and app identity/RBAC before enabling other services. PostgreSQL additionally needs `POSTGRES_ADMIN_PASSWORD` configured in the protected `dev`, `dev-bootstrap`, and `dev-destroy` GitHub Environments. Do not place that password in `terraform.tfvars`. Generated PostgreSQL, Storage, Event Hubs, and Service Bus names may need environment-specific overrides for global uniqueness.
 
-## GitHub Actions
+The user pool can add nodes only when Central India regional and ECASv5-family quota is available. With regional vCPU quota full, workloads requiring that pool can remain pending. The AKS system pool and management VM currently consume the four regional vCPUs shown by the subscription quota output.
 
-The repository has separate Terraform Plan and Terraform Apply workflows under `.github/workflows/`.
+## Environment inputs and naming
 
-- **Plan** runs for pull requests that change Terraform files and can also be started manually.
-- **Apply** runs manually, initializes the remote backend, validates the configuration, creates a plan, and applies it.
-- Both workflows use GitHub OIDC; no client secret is required.
-- Both use a concurrency group to prevent overlapping operations against the dev state.
+The environment-specific inputs are in `terraform.tfvars`: subscription, region, environment, project, address spaces, subnet prefixes, feature flags, VM sizes, and role identities. Change subnet CIDRs when the environment must connect to networks that use overlapping ranges.
 
-Configure these GitHub repository or environment variables:
+Names for resource groups, VNets, NSGs, routes, the management VM, Log Analytics, Firewall, Bastion, Application Gateway, AKS, ACR, Key Vault, PostgreSQL, Storage, Event Hubs, and Service Bus are generated from environment and project. Use the corresponding `*_name` override inputs when generated globally unique names are unavailable or do not meet naming policy.
+
+Only `dev` is configured today. To add `qa`, `uat`, or `prod`, create `terraform/environments/<environment>` and copy in `terraform.tfvars` and `backend.hcl` (plus the example file if useful). Change `environment` and the environment's subscription, region, CIDRs, identities, resource options, and any required name overrides. Point each backend file at the intended state storage account; GitHub Actions uses `<environment>.terraform.tfstate`. Configure the matching GitHub Environment with OIDC and backend variables before running its workflow. The workflow environment choices exist, but a run stops if the matching configuration folder is missing.
+
+## Terraform operations
+
+Run all infrastructure plans, applies, and destroys through the protected GitHub Actions workflows. They use OIDC and the dev remote backend; see the [GitHub Actions setup guide](../../../docs/github-actions-setup.md).
+
+## Provisioning dependencies
+
+Terraform orders dependent services from resource references and explicit dependencies:
+
+1. Resource groups, VNets, and subnets.
+2. NSGs, route tables, and VNet peerings.
+3. Network and workload identities and their required role assignments.
+4. Management VM, ACR, AKS, optional Firewall/Bastion/Application Gateway, and Key Vault.
+5. AKS ACR-pull and management-VM role assignments after their principals and scopes exist.
+6. Private DNS zones and VNet links before their private endpoints; PostgreSQL waits for its DNS link and uses a delegated subnet.
+7. Application Insights and diagnostic settings after the Log Analytics workspace exists.
+
+The dependency graph allows independent resources to deploy in parallel while blocking each dependent resource until its prerequisites are ready.
+
+## Role assignments and bootstrap
+
+Role assignments use the reusable `terraform/modules/rbac` module. Terraform manages AKS subnet `Network Contributor`, AKS kubelet `AcrPull`, GitHub deployment `AcrPush`, and the management VM's Reader/AKS roles. Optional app data roles are configured with `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments`; each map accepts stable keys, a principal object ID, and a least-privilege role. Terraform constrains role assignment administration to the exact role/principal pairs it manages. Role IDs are checked against Microsoft's [Azure RBAC built-in role catalog](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
+
+The deployment identity cannot grant itself the first role-assignment permission. Use the protected **Terraform RBAC Bootstrap** GitHub workflow with a separate OIDC identity that already has `User Access Administrator` and `Reader` on `rg-platform-dev` and state access. An existing Owner/User Access Administrator must grant those bootstrap permissions once; there is no Terraform-only path around that first authorization. The workflow then applies the constrained grants, after which normal full plans and applies run through the deployment identity.
+
+If creating a new environment, inspect the plan for the assignments and scopes before the first apply. The GitHub OIDC identity for that environment needs a matching federated credential and the necessary role-assignment permissions at the new environment's resource scopes.
+
+## GitHub Actions variables
+
+The detailed GitHub Environment variables, OIDC subjects, Azure permissions, and workflow sequence are in the [GitHub Actions setup guide](../../../docs/github-actions-setup.md). `dev-bootstrap` is for constrained RBAC setup; `dev-destroy` is restricted to teardown. Both should require reviewer approval.
+
+The pull-request Plan workflow uses separate repository variables `PLAN_ARM_CLIENT_ID`, `PLAN_ARM_TENANT_ID`, and `PLAN_ARM_SUBSCRIPTION_ID`, plus a `pull_request` federated credential for its read-only identity.
+
+Set these variables in the protected GitHub Environments:
 
 | Variable | Purpose |
 | --- | --- |
 | `ARM_CLIENT_ID` | Entra application/client ID for the GitHub deployment identity |
 | `ARM_TENANT_ID` | Entra tenant ID |
-| `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
-| `ACR_NAME` | Optional ACR registry name override for the NGINX image workflow; defaults to `makrsoftdevacr001` |
+| `ARM_SUBSCRIPTION_ID` | Subscription for OIDC login; must match that environment's `terraform.tfvars` |
 | `TF_BACKEND_RESOURCE_GROUP` | Terraform state resource group |
 | `TF_BACKEND_STORAGE_ACCOUNT` | Terraform state storage account |
 | `TF_BACKEND_CONTAINER` | Terraform state container |
-| `TF_BACKEND_KEY` | Terraform state file key |
-| `MANAGEMENT_ADMIN_SSH_PUBLIC_KEY` | Public SSH key used by the apply workflow for the management VM |
-
-The GitHub OIDC federated credential must match the repository and the `dev` GitHub Environment used by the apply job.
+Restrict each federated credential to the repository and intended subject. The deployment, bootstrap, and destroy identities use `environment:dev`, `environment:dev-bootstrap`, and `environment:dev-destroy`. Do not give the pull-request identity role-assignment write permission.
 
 ## Build and push the NGINX image
 
-The `docker/` directory contains a minimal NGINX image and landing page. The `Build and Push NGINX Image` workflow authenticates to Azure with the existing GitHub OIDC identity, logs in to ACR, and pushes `nginx-demo:<commit-sha>`.
+The `Build and Push NGINX Image` workflow pushes `nginx-demo:<commit-sha>` to the selected environment's ACR. Pushes to `docker/` target dev; a manual run can select another configured environment. ACR must exist and the workflow identity must have `AcrPush` before running the image workflow.
 
-The workflow runs when files under `docker/` change or can be started manually from **Actions > Build and Push NGINX Image > Run workflow**. It uses `makrsoftdevacr001` when the GitHub `dev` environment does not define `ACR_NAME`; set that variable only if the registry name differs. The workflow pushes the image to ACR; deploying it to AKS requires a separate Kubernetes deployment manifest or Helm release.
+## Networking and application traffic
 
-## Useful commands
+The Application Gateway subnet is dedicated and has no NSG or route-table association. Firewall deployment remains disabled while the public IP quota is exhausted. Enabling `enable_workload_firewall_default_route` routes only the workloads subnet through Firewall; enable it only after egress rules are configured. The AKS subnet is not associated with that route table.
 
-Run from `terraform/environments/dev`:
+Key Vault, Storage Blob, Event Hubs, and Service Bus use private endpoints in `snet-private` and private DNS zones linked to both spoke and hub VNets. Event Hubs and Service Bus share `privatelink.servicebus.windows.net`. PostgreSQL Flexible Server uses VNet injection into the dedicated delegated `snet-postgres` subnet; its private DNS zone is linked to both VNets. Azure Monitor uses an AMPLS linked to Log Analytics and, when enabled, Application Insights, with one private endpoint and five DNS zones linked to both VNets. `PrivateOnly` access means Monitor ingestion and queries must resolve and route through a linked VNet. Ensure custom DNS, VPN, or on-prem clients forward these zones correctly. Each VNet can connect to only one AMPLS, so verify there is no existing one before applying.
 
-```powershell
-terraform fmt -check -recursive
-terraform init -reconfigure -backend-config="backend.hcl"
-terraform validate
-terraform plan
-```
-
-Use the GitHub Actions workflow for routine applies so that deployments use the configured OIDC identity and remote state.
+The AKS ingress FQDN is not configured as an Application Gateway backend. Set `application_gateway_backend_fqdn` after deploying ingress and confirming a reachable backend.

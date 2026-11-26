@@ -3,14 +3,67 @@ location        = "centralindia"
 environment     = "dev"
 project         = "makrsoft"
 
+hub_vnet_cidr   = ["10.0.0.0/16"]
+spoke_vnet_cidr = ["10.1.0.0/16"]
+
+hub_subnets = {
+  AzureFirewallSubnet           = { address_prefixes = ["10.0.1.0/26"] }
+  AzureBastionSubnet            = { address_prefixes = ["10.0.2.0/26"] }
+  AzureFirewallManagementSubnet = { address_prefixes = ["10.0.3.0/26"] }
+}
+
+spoke_subnets = {
+  snet-aks        = { address_prefixes = ["10.1.0.0/22"] }
+  snet-appgw      = { address_prefixes = ["10.1.4.0/24"] }
+  snet-private    = { address_prefixes = ["10.1.5.0/24"] }
+  snet-workloads  = { address_prefixes = ["10.1.6.0/24"] }
+  snet-management = { address_prefixes = ["10.1.7.0/24"] }
+  snet-postgres   = {
+    address_prefixes = ["10.1.8.0/24"]
+    delegation = {
+      name         = "postgres-flexible-server"
+      service_name = "Microsoft.DBforPostgreSQL/flexibleServers"
+      actions      = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
+}
+
 enable_log_analytics        = false
 enable_firewall             = false
 enable_bastion              = false
 enable_application_gateway  = false
+application_gateway_zones  = ["1", "2", "3"]
 enable_acr                  = false
+enable_acr_private_endpoint = false
+acr_public_network_access_enabled = true
+acr_sku                     = "Basic"
 enable_aks                  = false
 enable_key_vault            = false
+enable_postgres_flexible_server = false
+enable_storage_account         = false
+enable_event_hubs              = false
+enable_service_bus             = false
+enable_application_insights    = false
+enable_azure_monitor_private_link = false
+storage_blob_role_assignments  = {}
+event_hubs_role_assignments    = {}
+service_bus_role_assignments   = {}
+enable_management_vm        = false
+enable_aks_user_node_pool   = false
+enable_aks_acr_pull         = false
+enable_acr_push             = false
 
-acr_name       = "replacewithuniqueacrname"
-key_vault_name = "replace-with-unique-kv-name"
+deployment_principal_object_id = "00000000-0000-0000-0000-000000000000"
+
+acr_name       = null # Defaults to <project><environment>acr001; override if globally unavailable.
+key_vault_name = null # Defaults to kv-<project>-<environment>-001; override if globally unavailable.
+aks_name       = null # Defaults to aks-<environment>-platform.
+postgres_flexible_server_name = null # PostgreSQL server name; globally unique.
+storage_account_name = null # Defaults to <project><environment>st001; globally unique.
+event_hubs_namespace_name = null # Defaults to eh-<project>-<environment>; globally unique.
+service_bus_namespace_name = null # Defaults to sb-<project>-<environment>; globally unique.
 aks_admin_group_object_ids = []
+
+# Set this before enabling the management VM.
+# management_admin_ssh_public_key = "ssh-ed25519 AAAA..."
+# Set TF_VAR_postgres_admin_password as a protected CI secret before enabling PostgreSQL.

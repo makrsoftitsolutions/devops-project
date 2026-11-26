@@ -1,5 +1,5 @@
 resource "azurerm_network_security_group" "this" {
-  name                = "nsg-management-dev"
+  name                = var.network_security_group_name
   location            = var.location
   resource_group_name = var.resource_group_name
 
@@ -43,7 +43,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   resource_group_name = var.resource_group_name
   location            = var.location
   size                = var.vm_size
-  zone                = "1"
+  zone                = var.zone
 
   admin_username                  = var.admin_username
   disable_password_authentication = true

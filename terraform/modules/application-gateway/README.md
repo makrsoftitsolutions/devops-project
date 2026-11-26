@@ -1,4 +1,5 @@
-Application Gateway module for optional dev testing. Before enabling it, configure a
-real backend target, validate subnet sizing and regional SKU availability, and add the
-required NSG rules and diagnostics. The module currently creates a basic HTTP listener
-with a WAF_v2 SKU; review and harden it before exposing an application publicly.
+# Application Gateway module
+
+Creates an Application Gateway, static Standard public IP, listener, routing rule, and optional backend FQDN. The caller supplies environment-specific name, resource group, subnet, zones, backend FQDN, and tags. The subnet must be dedicated to Application Gateway and appropriately sized for the selected SKU.
+
+Public IP quotas and regional SKU availability are subscription- and region-specific. Confirm both before enabling this module.

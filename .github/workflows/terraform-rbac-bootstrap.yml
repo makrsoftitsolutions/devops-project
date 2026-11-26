@@ -1,0 +1,169 @@
+name: Terraform RBAC Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type BOOTSTRAP to create the targeted RBAC plan
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
+
+jobs:
+  plan-bootstrap:
+    if: ${{ inputs.confirmation == 'BOOTSTRAP' }}
+    runs-on: ubuntu-latest
+    environment: dev
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+      TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+      TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+      TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    defaults:
+      run:
+        working-directory: terraform/root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify dev configuration
+        shell: bash
+        run: |
+          config="../environments/dev/terraform.tfvars"
+          test -f "$config" || { echo "Missing $config"; exit 1; }
+          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
+          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
+
+      - uses: azure/login@v2
+        with:
+          auth-type: SERVICE_PRINCIPAL
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
+            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Plan the two delegation grants
+        run: >-
+          terraform plan -input=false
+          -var-file="../environments/dev/terraform.tfvars"
+          -target='module.rbac_deployment_acr_admin[0]'
+          -target='module.rbac_deployment_management[0]'
+          -out=rbac-bootstrap.tfplan
+
+      - name: Show bootstrap plan
+        run: terraform show -no-color rbac-bootstrap.tfplan
+
+      - name: Upload bootstrap plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-rbac-bootstrap-plan
+          path: terraform/root/rbac-bootstrap.tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  apply-bootstrap:
+    needs: plan-bootstrap
+    runs-on: ubuntu-latest
+    environment: dev-bootstrap
+
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.BOOTSTRAP_ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.BOOTSTRAP_ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.BOOTSTRAP_ARM_SUBSCRIPTION_ID }}
+      TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
+      TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
+      TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
+      TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    defaults:
+      run:
+        working-directory: terraform/root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify bootstrap configuration
+        shell: bash
+        run: |
+          config="../environments/dev/terraform.tfvars"
+          test -f "$config" || { echo "Missing $config"; exit 1; }
+          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
+          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "BOOTSTRAP_ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
+          if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
+            echo "Set the bootstrap identity and Terraform backend variables in the dev-bootstrap GitHub Environment."
+            exit 1
+          fi
+
+      - uses: azure/login@v2
+        with:
+          auth-type: SERVICE_PRINCIPAL
+          client-id: ${{ vars.BOOTSTRAP_ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.BOOTSTRAP_ARM_TENANT_ID }}
+          subscription-id: ${{ vars.BOOTSTRAP_ARM_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
+            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Download bootstrap plan
+        uses: actions/download-artifact@v4
+        with:
+          name: dev-rbac-bootstrap-plan
+          path: terraform/root
+
+      - name: Apply reviewed bootstrap plan
+        run: terraform apply -input=false -auto-approve rbac-bootstrap.tfplan

@@ -19,6 +19,12 @@ variable "backend_fqdn" {
   default = null
 }
 
+variable "zones" {
+  description = "Availability zones for the gateway; use an empty list for regional placement."
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

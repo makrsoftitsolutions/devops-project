@@ -1,118 +1,51 @@
-# Azure DevOps Platform Project – Dev Environment
+# Makrsoft Azure platform
 
-This repository currently contains a **dev-only** Azure Terraform environment. Production configuration has been removed so the first deployment can be tested safely in the personal Azure subscription.
+This repository provisions an Azure hub-and-spoke platform with reusable Terraform modules and GitHub Actions using Microsoft Entra Workload Identity Federation (OIDC). Shared Terraform code lives in `terraform/root`; environment-specific settings and backend configuration live in `terraform/environments/<environment>`.
 
-## What the dev environment creates by default
-
-- `rg-network-dev` and `rg-platform-dev`
-- Hub VNet (`10.0.0.0/16`) and hub subnets
-- Spoke VNet (`10.1.0.0/16`) and workload subnets
-- Hub and spoke Network Security Groups, associated with their subnets
-- Bidirectional hub/spoke VNet peering
-
-Optional modules are included for Azure Firewall, Bastion, Application Gateway, ACR, AKS, Key Vault and Log Analytics. They are disabled in the supplied `terraform.tfvars` to avoid unexpected costs. Enable and test them one at a time.
+Currently, only `dev` has a complete environment configuration. The same Terraform root and workflows support adding `qa`, `uat`, and `prod` after their environment tfvars, backend settings, GitHub Environment, OIDC trust, and Azure permissions are configured.
 
 ## Repository layout
 
 ```text
 terraform/
-  environments/dev/
-    backend.tf
-    backend.hcl
-    providers.tf
-    versions.tf
-    main.tf
-    variables.tf
-    terraform.tfvars
-    terraform.tfvars.example
-  modules/
-    acr/ aks/ application-gateway/ bastion/ firewall/
-    identity/ key-vault/ log-analytics/ network/ nsg/
-    peering/ private-endpoint/ route-table/
-.github/workflows/
-  terraform-plan.yml
-  terraform-apply.yml
-  terraform-destroy.yml
-docs/
+  root/                       # Shared Terraform root module
+  modules/                    # Reusable Azure modules
+  environments/
+    dev/                      # Dev tfvars and backend configuration
+.github/workflows/            # Terraform and ACR image workflows
+docker/                       # NGINX image build context
+docs/                         # Architecture and deployment notes
 ```
 
-## Prerequisites
+## Environment configuration
 
-- Terraform >= 1.6
-- Azure CLI
-- Access to the personal Azure subscription configured in `terraform.tfvars`
-- Existing Azure Storage account and private blob container for remote state
+The dev inputs are in `terraform/environments/dev/terraform.tfvars`. They include the subscription, region, environment and project names, hub/spoke CIDRs and subnet prefixes, resource options, VM SKUs, and role-assignment principals. Resource names are generated from project/environment values; ACR, Key Vault, and AKS support explicit name overrides where global naming rules require them.
 
-## Azure login and subscription
+To prepare another environment, create `terraform/environments/qa` (or `uat`/`prod`) with a copy of the dev `terraform.tfvars` and `backend.hcl`, then update its environment, subscription, region, IP ranges, identities, feature flags, and any required unique-name overrides. The remote state key is derived as `<environment>.terraform.tfstate`, keeping state separate. Configure the matching GitHub Environment and OIDC federated credential. The workflow dropdown includes those names but stops if the environment configuration is missing.
 
-```powershell
-az login --tenant "a24223b8-0a32-4862-922d-d3f2545866a2"
-az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
-az account show --output table
-```
+The dev environment's resource details, bootstrap requirements, and quota notes are in [terraform/environments/dev/README.md](terraform/environments/dev/README.md).
 
-The account running Terraform needs Azure resource deployment permissions. For remote state with Azure AD authentication, it also needs **Storage Blob Data Contributor** on the state storage account or container. The storage account and container must already exist.
+The shared root includes opt-in modules for PostgreSQL Flexible Server, Storage, Event Hubs, Service Bus, Application Insights, and Azure Monitor diagnostics/private link. Dev enables Azure Monitor Private Link for Log Analytics; the other added data services are disabled until their costs, names, credentials, and client identities are confirmed. Private endpoints and DNS links for Key Vault, optional ACR/Blob/messaging, and Azure Monitor cover hub and spoke VNets; PostgreSQL uses VNet injection and its DNS zone is linked to both VNets. See the [GitHub OIDC setup guide](docs/github-actions-setup.md) for role assignments, protected environments, and workflow steps.
 
-## Configure remote state
+## Terraform operations
 
-Review `terraform/environments/dev/backend.hcl`. The delivered values are based on the state storage details supplied for this project:
-
-- Resource group: `rg-tfstate-devops`
-- Storage account: `stmakrdevops001`
-- Container: `tfstate`
-- State key: `dev.terraform.tfstate`
-
-Confirm these values match the resources in your subscription before initialization. Backend configuration is separate from the AzureRM provider configuration.
-
-## Deploy dev from Windows PowerShell
-
-```powershell
-cd C:\path\to\devops-project\terraform\environments\dev
-
-az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
-
-terraform fmt -recursive
-terraform init -backend-config="backend.hcl" -reconfigure
-terraform validate
-terraform plan -var-file="terraform.tfvars"
-```
-
-Review the complete plan. Only if it contains the expected dev resources, run:
-
-```powershell
-terraform apply -var-file="terraform.tfvars"
-```
-
-Do not run `terraform destroy` against the state storage account. The state storage is a separately managed prerequisite.
-
-## Optional services and costs
-
-In `terraform.tfvars`, enable only what you intend to test:
-
-- `enable_log_analytics`
-- `enable_firewall`
-- `enable_bastion`
-- `enable_application_gateway`
-- `enable_acr`
-- `enable_aks`
-- `enable_key_vault`
-
-Firewall, Bastion, Application Gateway and AKS can create significant ongoing charges. ACR, Key Vault and Log Analytics may also incur charges. Check regional SKU availability, quotas, naming uniqueness and pricing before enabling.
+Run Plan, Apply, and Destroy through the protected GitHub Actions workflows. They use GitHub OIDC and the environment-specific remote state. See [GitHub Actions setup](docs/github-actions-setup.md).
 
 ## GitHub Actions
 
-The workflows are dev-only and use GitHub OIDC. Configure GitHub repository/environment variables:
+Manual Plan, Apply, and Destroy workflows use protected GitHub Environments and OIDC credentials. Pull-request plans use a separate read-only identity and skip fork-originated PRs. The RBAC bootstrap and destroy workflows use separate, more privileged protected environments.
 
-- `ARM_CLIENT_ID`
-- `ARM_TENANT_ID`
-- `ARM_SUBSCRIPTION_ID`
-- `TF_BACKEND_RESOURCE_GROUP`
-- `TF_BACKEND_STORAGE_ACCOUNT`
-- `TF_BACKEND_CONTAINER`
-- `TF_BACKEND_KEY`
+Configure these variables in each GitHub Environment:
 
-The federated credential subject must match the repository branch or the GitHub `dev` environment used by the workflow. Grant the identity Contributor at the required deployment scope and Storage Blob Data Contributor on the state storage scope. A hosted runner must be able to reach the storage endpoint.
+- `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
+- `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, `TF_BACKEND_CONTAINER`
+
+The backend key is generated from the selected environment; `TF_BACKEND_KEY` is not required. The OIDC identity also needs Azure resource permissions and role-assignment permissions for assignments managed by Terraform. Azure does not allow the deployment identity to grant itself those permissions, so first-time RBAC grants require an already-authorized bootstrap identity. Dev keeps ACR public so GitHub-hosted runners can connect; private ACR needs Premium SKU and a VNet-connected self-hosted runner.
+
+## NGINX image workflow
+
+The `Build and Push NGINX Image` workflow builds from `docker/` and pushes `nginx-demo:<commit-sha>` to ACR. Commits under `docker/` target dev; manual runs can select another configured environment. Apply Terraform and grant `AcrPush` before running it.
 
 ## Network notes
 
-The hub/spoke VNets are peered in both directions. Peering alone does not configure forced tunneling. Do not assume traffic is routed through Azure Firewall; explicit UDRs, firewall rules, DNS and connectivity validation are required.
+VNet CIDRs and subnet prefixes are environment inputs. Choose ranges that do not overlap with networks that will be peered or connected through VPN/ExpressRoute. VNet peering alone does not route traffic through Azure Firewall; explicit UDRs, firewall rules, and DNS are required.

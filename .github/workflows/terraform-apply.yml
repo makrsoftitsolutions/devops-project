@@ -2,43 +2,66 @@ name: Terraform Apply
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment configuration to apply
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - uat
+          - prod
+        default: dev
 
 permissions:
   contents: read
   id-token: write
 
-# Prevent simultaneous Plan and Apply operations
 concurrency:
-  group: terraform-dev-state
+  group: terraform-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
-
-env:
-  ARM_USE_OIDC: "true"
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-  # Pass subscription ID directly to Terraform
-  TF_VAR_subscription_id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-  
-  TF_VAR_management_admin_ssh_public_key: ${{ vars.MANAGEMENT_ADMIN_SSH_PUBLIC_KEY }}
-  TF_VAR_enable_management_vm: "true"
-
-  TF_IN_AUTOMATION: "true"
-  TF_INPUT: "false"
 
 jobs:
   apply:
     runs-on: ubuntu-latest
-    environment: dev
+    environment: ${{ inputs.environment || 'dev' }}
+
+    env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
 
     defaults:
       run:
-        working-directory: terraform/environments/dev
+        working-directory: terraform/root
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify environment configuration
+        shell: bash
+        run: |
+          config="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
+          if [[ ! -f "$config" ]]; then
+            echo "Missing $config. Copy the dev configuration and set values for ${TARGET_ENVIRONMENT}."
+            exit 1
+          fi
+          grep -Eq "^environment[[:space:]]*=[[:space:]]*\"${TARGET_ENVIRONMENT}\"[[:space:]]*$" "$config" || {
+            echo "The environment value in $config must be ${TARGET_ENVIRONMENT}."
+            exit 1
+          }
+          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
+          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
 
       - name: Azure Login using OIDC
         uses: azure/login@v2
@@ -58,7 +81,7 @@ jobs:
 
       - name: Terraform Format
         run: terraform fmt -check -recursive
-        working-directory: .
+        working-directory: terraform
 
       - name: Terraform Init
         run: |
@@ -66,7 +89,7 @@ jobs:
             -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
             -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
-            -backend-config="key=${{ vars.TF_BACKEND_KEY }}" \
+            -backend-config="key=${TARGET_ENVIRONMENT}.terraform.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
 
@@ -74,7 +97,7 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -input=false -out=tfplan
+        run: terraform plan -input=false -var-file="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars" -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan
