@@ -5,10 +5,10 @@ environment = "dev"
 project     = "makrsoft"
 
 enable_log_analytics            = false
-enable_firewall                 = false
+enable_firewall                 = true
 enable_bastion                  = true
-enable_application_gateway      = false
-enable_acr                      = false
+enable_application_gateway      = true
+enable_acr                      = true
 enable_aks                      = true
 enable_key_vault                = false
 enable_management_vm            = true
