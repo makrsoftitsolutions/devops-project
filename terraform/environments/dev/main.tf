@@ -206,41 +206,54 @@ module "aks_identity" {
   tags                = local.common_tags
 }
 
-resource "azurerm_role_assignment" "aks_network_contributor" {
-  count                = var.enable_aks ? 1 : 0
-  scope                = module.spoke_network.subnet_ids["snet-aks"]
-  role_definition_name = "Network Contributor"
-  principal_id         = module.aks_identity[0].principal_id
-  principal_type       = "ServicePrincipal"
+module "rbac_aks_network" {
+  count  = var.enable_aks ? 1 : 0
+  source = "../../modules/rbac"
+
+  assignments = {
+    aks_network_contributor = {
+      scope                = module.spoke_network.subnet_ids["snet-aks"]
+      role_definition_name = "Network Contributor"
+      principal_id         = module.aks_identity[0].principal_id
+    }
+  }
 }
 
 # This assignment is bootstrapped once by an Azure identity that already has
 # roleAssignments/write on the ACR. Afterward, the GitHub OIDC identity can
 # manage the AKS AcrPull assignment through Terraform.
-resource "azurerm_role_assignment" "deployment_acr_rbac_admin" {
+module "rbac_deployment_acr_admin" {
   count = (
     var.enable_acr &&
     (var.enable_aks_acr_pull || var.enable_acr_push)
   ) ? 1 : 0
+  source = "../../modules/rbac"
 
-  scope                = module.acr[0].id
-  role_definition_name = "Role Based Access Control Administrator"
-  principal_id         = var.deployment_principal_object_id
-  principal_type       = "ServicePrincipal"
+  assignments = {
+    deployment_acr_rbac_admin = {
+      scope                = module.acr[0].id
+      role_definition_name = "Role Based Access Control Administrator"
+      principal_id         = var.deployment_principal_object_id
+    }
+  }
 }
 
-resource "azurerm_role_assignment" "deployment_acr_push" {
+module "rbac_acr_push" {
   count = (
     var.enable_acr &&
     var.enable_acr_push
   ) ? 1 : 0
+  source = "../../modules/rbac"
 
-  scope                = module.acr[0].id
-  role_definition_name = "AcrPush"
-  principal_id         = var.deployment_principal_object_id
-  principal_type       = "ServicePrincipal"
+  assignments = {
+    deployment_acr_push = {
+      scope                = module.acr[0].id
+      role_definition_name = "AcrPush"
+      principal_id         = var.deployment_principal_object_id
+    }
+  }
 
-  depends_on = [azurerm_role_assignment.deployment_acr_rbac_admin]
+  depends_on = [module.rbac_deployment_acr_admin]
 }
 
 module "aks" {
@@ -258,26 +271,76 @@ module "aks" {
   admin_group_object_ids     = var.aks_admin_group_object_ids
   log_analytics_workspace_id = var.enable_log_analytics ? module.log_analytics[0].id : null
   tags                       = local.common_tags
-  depends_on                 = [azurerm_role_assignment.aks_network_contributor]
+  depends_on                 = [module.rbac_aks_network]
 }
 
 # The GitHub deployment identity must already have roleAssignments/write at the
 # ACR scope (for example, Role Based Access Control Administrator).
-resource "azurerm_role_assignment" "aks_acr_pull" {
+module "rbac_aks_acr_pull" {
   count = (
     var.enable_aks &&
     var.enable_acr &&
     var.enable_aks_acr_pull
   ) ? 1 : 0
+  source = "../../modules/rbac"
 
-  scope                = module.acr[0].id
-  role_definition_name = "AcrPull"
+  assignments = {
+    aks_acr_pull = {
+      scope                = module.acr[0].id
+      role_definition_name = "AcrPull"
+      principal_id         = module.aks[0].kubelet_identity_object_id
+    }
+  }
 
-  principal_id = module.aks[0].kubelet_identity_object_id
+  depends_on = [module.rbac_deployment_acr_admin]
+}
 
-  principal_type = "ServicePrincipal"
+module "rbac_management_vm" {
+  count  = var.enable_management_vm ? 1 : 0
+  source = "../../modules/rbac"
 
-  depends_on = [azurerm_role_assignment.deployment_acr_rbac_admin]
+  assignments = merge(
+    {
+      management_vm_resource_reader = {
+        scope                = azurerm_resource_group.spoke.id
+        role_definition_name = "Reader"
+        principal_id         = module.management_vm[0].principal_id
+      }
+    },
+    var.enable_aks ? {
+      management_vm_aks_cluster_user = {
+        scope                = module.aks[0].id
+        role_definition_name = "Azure Kubernetes Service Cluster User Role"
+        principal_id         = module.management_vm[0].principal_id
+      }
+      management_vm_aks_rbac = {
+        scope                = module.aks[0].id
+        role_definition_name = var.management_vm_aks_rbac_role
+        principal_id         = module.management_vm[0].principal_id
+      }
+    } : {}
+  )
+}
+
+# Preserve existing role assignment state while moving the resources into the reusable module.
+moved {
+  from = azurerm_role_assignment.aks_network_contributor[0]
+  to   = module.rbac_aks_network[0].azurerm_role_assignment.this["aks_network_contributor"]
+}
+
+moved {
+  from = azurerm_role_assignment.deployment_acr_rbac_admin[0]
+  to   = module.rbac_deployment_acr_admin[0].azurerm_role_assignment.this["deployment_acr_rbac_admin"]
+}
+
+moved {
+  from = azurerm_role_assignment.deployment_acr_push[0]
+  to   = module.rbac_acr_push[0].azurerm_role_assignment.this["deployment_acr_push"]
+}
+
+moved {
+  from = azurerm_role_assignment.aks_acr_pull[0]
+  to   = module.rbac_aks_acr_pull[0].azurerm_role_assignment.this["aks_acr_pull"]
 }
 
 module "key_vault" {

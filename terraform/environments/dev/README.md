@@ -25,7 +25,7 @@ Change these options in `terraform.tfvars` to enable or disable optional resourc
 
 ## Azure role assignments
 
-Terraform manages the following assignments in `main.tf`:
+Terraform manages these assignments through the reusable `terraform/modules/rbac` module. Stable assignment keys and root-level `moved` blocks preserve the existing state when assignments move into the module:
 
 | Assignment | Principal | Scope | Purpose |
 | --- | --- | --- | --- |
@@ -33,12 +33,40 @@ Terraform manages the following assignments in `main.tf`:
 | `deployment_acr_rbac_admin` | GitHub Actions deployment service principal | ACR resource | Allows the deployment identity to manage ACR role assignments |
 | `deployment_acr_push` | GitHub Actions deployment service principal | ACR resource | Allows the image build workflow to push images |
 | `aks_acr_pull` | AKS kubelet identity | ACR resource | Allows AKS nodes to pull container images |
+| `management_vm_resource_reader` | Management VM system-assigned identity | Platform resource group | Allows Azure CLI to discover and read dev resources |
+| `management_vm_aks_cluster_user` | Management VM system-assigned identity | AKS cluster | Allows downloading a user kubeconfig |
+| `management_vm_aks_rbac` | Management VM system-assigned identity | AKS cluster | Read-only Kubernetes API access by default |
 
 The deployment identity's `Role Based Access Control Administrator` assignment is limited to the ACR resource. It is required because Terraform creates the `AcrPull` and `AcrPush` assignments. This role is broader than either registry data role; review its scope and role assignment conditions against your production access policy.
 
 The GitHub deployment service principal was checked and currently has `Contributor` at subscription scope, `Storage Blob Data Contributor` on the Terraform state storage account, and `Role Based Access Control Administrator` on the ACR. Subscription-level `Contributor` supplies the Azure resource write permissions needed to create the Firewall and Application Gateway. Terraform does not create that subscription-level `Contributor` grant; it must remain assigned through the organization's identity governance process.
 
 `enable_acr_push` controls the Terraform-managed `AcrPush` assignment for the deployment service principal. Apply Terraform before running the image build workflow so this permission exists.
+
+### Use the management VM to access AKS
+
+The management VM's system-assigned identity is granted Azure `Reader` on the platform resource group, the AKS Cluster User role, and `Azure Kubernetes Service RBAC Reader` on the cluster. The Kubernetes role can be changed with `management_vm_aks_rbac_role`; use `Azure Kubernetes Service RBAC Writer` only if the VM needs to deploy or change workloads.
+
+The first creation of these role assignments must run under an identity that already has role-assignment write permission on the platform resource group and AKS resource, and access to the Terraform remote state. The GitHub deployment identity currently has `Contributor` at subscription scope, which does not include permission to create role assignments at these scopes. From PowerShell in this directory, sign in with an authorized Azure identity and run:
+
+```powershell
+az login
+az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
+terraform init -reconfigure -backend-config="backend.hcl"
+terraform apply `
+  -target='module.rbac_management_vm'
+```
+
+After the assignments are created, use the VM identity instead of interactive device login:
+
+```bash
+az login --identity
+az account show --output table
+az aks get-credentials --resource-group rg-platform-dev --name aks-dev-platform --overwrite-existing
+kubectl get nodes
+```
+
+The VM is in the spoke VNet and can reach the private AKS API endpoint. If `az login --identity` still reports no subscriptions, confirm the Reader assignment exists for the VM identity. `AADSTS530035` during a personal interactive login is a separate Microsoft Entra security-defaults block; do not disable security defaults to work around it. Use an authorized organizational identity or the VM's managed identity.
 
 The Application Gateway subnet is dedicated and currently has no NSG or route-table association. Firewall deployment is temporarily disabled while the subscription's public IP quota is full. When it is re-enabled, no workload UDR will route through it unless `enable_workload_firewall_default_route` is also enabled after firewall egress rules are configured.
 
@@ -58,8 +86,8 @@ From PowerShell, in this directory, sign in with that authorized identity. It mu
 az login
 az account set --subscription "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
 terraform init -reconfigure -backend-config="backend.hcl"
-terraform plan -target='azurerm_role_assignment.deployment_acr_rbac_admin[0]'
-terraform apply -target='azurerm_role_assignment.deployment_acr_rbac_admin[0]'
+terraform plan -target='module.rbac_deployment_acr_admin'
+terraform apply -target='module.rbac_deployment_acr_admin'
 ```
 
 Before approving the plan, confirm the target is the GitHub Actions service principal and the scope is the intended ACR. The target option is used only for this initial bootstrap. Terraform stores the resulting assignment in the remote state.
@@ -97,7 +125,7 @@ Configure these GitHub repository or environment variables:
 | `ARM_CLIENT_ID` | Entra application/client ID for the GitHub deployment identity |
 | `ARM_TENANT_ID` | Entra tenant ID |
 | `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
-| `ACR_NAME` | ACR registry name used by the NGINX image workflow (dev: `makrsoftdevacr001`) |
+| `ACR_NAME` | Optional ACR registry name override for the NGINX image workflow; defaults to `makrsoftdevacr001` |
 | `TF_BACKEND_RESOURCE_GROUP` | Terraform state resource group |
 | `TF_BACKEND_STORAGE_ACCOUNT` | Terraform state storage account |
 | `TF_BACKEND_CONTAINER` | Terraform state container |
@@ -110,7 +138,7 @@ The GitHub OIDC federated credential must match the repository and the `dev` Git
 
 The `docker/` directory contains a minimal NGINX image and landing page. The `Build and Push NGINX Image` workflow authenticates to Azure with the existing GitHub OIDC identity, logs in to ACR, and pushes `nginx-demo:<commit-sha>`.
 
-The workflow runs when files under `docker/` change or can be started manually from **Actions > Build and Push NGINX Image > Run workflow**. Configure `ACR_NAME` as a variable in the GitHub `dev` environment. The workflow pushes the image to ACR; deploying it to AKS requires a separate Kubernetes deployment manifest or Helm release.
+The workflow runs when files under `docker/` change or can be started manually from **Actions > Build and Push NGINX Image > Run workflow**. It uses `makrsoftdevacr001` when the GitHub `dev` environment does not define `ACR_NAME`; set that variable only if the registry name differs. The workflow pushes the image to ACR; deploying it to AKS requires a separate Kubernetes deployment manifest or Helm release.
 
 ## Useful commands
 

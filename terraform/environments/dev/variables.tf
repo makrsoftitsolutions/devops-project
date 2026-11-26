@@ -169,6 +169,21 @@ variable "management_admin_username" {
   default     = "azureadmin"
 }
 
+variable "management_vm_aks_rbac_role" {
+  description = "AKS Azure RBAC permission granted to the management VM identity."
+  type        = string
+  default     = "Azure Kubernetes Service RBAC Reader"
+
+  validation {
+    condition = contains([
+      "Azure Kubernetes Service RBAC Reader",
+      "Azure Kubernetes Service RBAC Writer",
+      "Azure Kubernetes Service RBAC Cluster Admin"
+    ], var.management_vm_aks_rbac_role)
+    error_message = "Choose the AKS RBAC Reader, Writer, or Cluster Admin role."
+  }
+}
+
 variable "management_admin_ssh_public_key" {
   description = "SSH public key for management VM."
   type        = string
