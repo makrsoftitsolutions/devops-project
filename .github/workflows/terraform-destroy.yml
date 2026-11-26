@@ -49,7 +49,7 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      # 4. Initialize Terraform remote backend
+      # 4. Initialize remote backend
       - name: Terraform Init
         run: |
           terraform init \
@@ -59,44 +59,29 @@ jobs:
             -backend-config="key=${{ vars.TF_BACKEND_KEY }}" \
             -backend-config="use_azuread_auth=true"
 
-      # 5. Verify Terraform RBAC resource exists
-      - name: Verify Pipeline RBAC Assignment
+      # 5. Verify Terraform state
+      - name: Verify Terraform State
         run: |
-          terraform state list > terraform-state.txt
+          echo "Current Terraform resources:"
+          terraform state list
 
-          RESOURCE='module.rbac_deployment_management[0].azurerm_role_assignment.this["deployment_manage_vm_roles"]'
-
-          if grep -Fxq "$RESOURCE" terraform-state.txt; then
-            echo "Target RBAC assignment exists in Terraform state."
-          else
-            echo "::error::Expected RBAC resource not found. Stopping destroy."
-            exit 1
-          fi
-
-      # 6. Preserve pipeline RBAC assignment
-      - name: Preserve Pipeline RBAC Assignment
-        run: |
-          terraform state rm \
-            'module.rbac_deployment_management[0].azurerm_role_assignment.this["deployment_manage_vm_roles"]'
-
-      # 7. Generate Terraform Destroy Plan
+      # 6. Generate destroy plan
       - name: Terraform Destroy Plan
         run: |
           terraform plan -destroy -out=destroy.tfplan
 
-      # 8. Display resources scheduled for deletion
-      - name: Review Terraform Destroy Plan
+      # 7. Review destroy plan
+      - name: Review Destroy Plan
         run: |
           terraform show destroy.tfplan
 
-      # 9. Execute Terraform Destroy
+      # 8. Execute destroy
       - name: Terraform Destroy Apply
         run: |
           terraform apply -auto-approve destroy.tfplan
 
-      # 10. Display completion
+      # 9. Completion
       - name: Destroy Summary
         if: success()
         run: |
           echo "Terraform destroy completed successfully."
-          echo "Pipeline RBAC assignment was preserved."
