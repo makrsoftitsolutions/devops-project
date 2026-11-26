@@ -380,7 +380,7 @@ variable "key_vault_name" {
   default = null
 
   validation {
-    condition     = var.key_vault_name == null || (length(var.key_vault_name) >= 3 && length(var.key_vault_name) <= 24 && can(regex("^[a-zA-Z0-9-]+$", var.key_vault_name)))
+    condition     = var.key_vault_name == null ? true : (length(var.key_vault_name) >= 3 && length(var.key_vault_name) <= 24 && can(regex("^[a-zA-Z0-9-]+$", var.key_vault_name)))
     error_message = "Key Vault names must contain 3-24 letters, numbers, or hyphens."
   }
 }
@@ -390,7 +390,7 @@ variable "aks_name" {
   default = null
 
   validation {
-    condition     = var.aks_name == null || (length(var.aks_name) >= 1 && length(var.aks_name) <= 63 && can(regex("^[a-zA-Z0-9-]+$", var.aks_name)))
+    condition     = var.aks_name == null ? true : (length(var.aks_name) >= 1 && length(var.aks_name) <= 63 && can(regex("^[a-zA-Z0-9-]+$", var.aks_name)))
     error_message = "AKS names must contain 1-63 letters, numbers, or hyphens."
   }
 }
