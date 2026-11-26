@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "terraform/**"
-      - ".github/workflows/terraform-plan.yml"
+      - ".github/workflows/terraform-*.yml"
   workflow_dispatch:
     inputs:
       environment:

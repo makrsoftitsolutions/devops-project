@@ -3,6 +3,16 @@ name: Terraform RBAC Bootstrap
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: Environment configuration to bootstrap
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - uat
+          - prod
+        default: dev
       confirmation:
         description: Type BOOTSTRAP to create the targeted RBAC plan
         required: true
@@ -13,16 +23,17 @@ permissions:
   id-token: write
 
 concurrency:
-  group: terraform-dev
+  group: terraform-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 jobs:
   plan-bootstrap:
     if: ${{ inputs.confirmation == 'BOOTSTRAP' }}
     runs-on: ubuntu-latest
-    environment: dev
+    environment: ${{ inputs.environment || 'dev' }}
 
     env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
@@ -41,14 +52,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify dev configuration
+      - name: Verify environment configuration
         shell: bash
         run: |
-          config="../environments/dev/terraform.tfvars"
+          config="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
           test -f "$config" || { echo "Missing $config"; exit 1; }
+          grep -Eq "^environment[[:space:]]*=[[:space:]]*\"${TARGET_ENVIRONMENT}\"[[:space:]]*$" "$config" || {
+            echo "The environment value in $config must be ${TARGET_ENVIRONMENT}."
+            exit 1
+          }
           config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
           if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
             echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            exit 1
+          fi
+          if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
+            echo "Set ARM_* and TF_BACKEND_* variables for ${TARGET_ENVIRONMENT}."
             exit 1
           fi
 
@@ -73,7 +92,7 @@ jobs:
             -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
             -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
             -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
-            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="key=${TARGET_ENVIRONMENT}.terraform.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
 
@@ -83,7 +102,7 @@ jobs:
       - name: Plan the two delegation grants
         run: >-
           terraform plan -input=false
-          -var-file="../environments/dev/terraform.tfvars"
+          -var-file="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
           -target='module.rbac_deployment_acr_admin[0]'
           -target='module.rbac_deployment_management[0]'
           -out=rbac-bootstrap.tfplan
@@ -94,7 +113,7 @@ jobs:
       - name: Upload bootstrap plan
         uses: actions/upload-artifact@v4
         with:
-          name: dev-rbac-bootstrap-plan
+          name: ${{ inputs.environment || 'dev' }}-rbac-bootstrap-plan
           path: terraform/root/rbac-bootstrap.tfplan
           retention-days: 1
           if-no-files-found: error
@@ -102,9 +121,10 @@ jobs:
   apply-bootstrap:
     needs: plan-bootstrap
     runs-on: ubuntu-latest
-    environment: dev-bootstrap
+    environment: ${{ format('{0}-bootstrap', inputs.environment || 'dev') }}
 
     env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.BOOTSTRAP_ARM_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.BOOTSTRAP_ARM_TENANT_ID }}
@@ -126,15 +146,19 @@ jobs:
       - name: Verify bootstrap configuration
         shell: bash
         run: |
-          config="../environments/dev/terraform.tfvars"
+          config="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
           test -f "$config" || { echo "Missing $config"; exit 1; }
+          grep -Eq "^environment[[:space:]]*=[[:space:]]*\"${TARGET_ENVIRONMENT}\"[[:space:]]*$" "$config" || {
+            echo "The environment value in $config must be ${TARGET_ENVIRONMENT}."
+            exit 1
+          }
           config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
           if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
             echo "BOOTSTRAP_ARM_SUBSCRIPTION_ID must match subscription_id in $config."
             exit 1
           fi
           if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
-            echo "Set the bootstrap identity and Terraform backend variables in the dev-bootstrap GitHub Environment."
+            echo "Set BOOTSTRAP_ARM_* and TF_BACKEND_* variables in the ${TARGET_ENVIRONMENT}-bootstrap GitHub Environment."
             exit 1
           fi
 
@@ -155,14 +179,14 @@ jobs:
             -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
             -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
             -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
-            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="key=${TARGET_ENVIRONMENT}.terraform.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
 
       - name: Download bootstrap plan
         uses: actions/download-artifact@v4
         with:
-          name: dev-rbac-bootstrap-plan
+          name: ${{ inputs.environment || 'dev' }}-rbac-bootstrap-plan
           path: terraform/root
 
       - name: Apply reviewed bootstrap plan

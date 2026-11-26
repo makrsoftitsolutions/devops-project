@@ -9,6 +9,9 @@ on:
         type: choice
         options:
           - dev
+          - qa
+          - uat
+          - prod
         default: dev
       confirm_destroy:
         description: Type DESTROY to confirm infrastructure deletion
@@ -20,7 +23,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: terraform-dev
+  group: terraform-${{ inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 jobs:
@@ -40,9 +43,10 @@ jobs:
   plan-destroy:
     needs: validate-confirmation
     runs-on: ubuntu-latest
-    environment: dev
+    environment: ${{ inputs.environment || 'dev' }}
 
     env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
@@ -62,18 +66,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify dev configuration
+      - name: Verify environment configuration
         shell: bash
         run: |
-          config="../environments/dev/terraform.tfvars"
+          config="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
           test -f "$config" || { echo "Missing $config"; exit 1; }
+          grep -Eq "^environment[[:space:]]*=[[:space:]]*\"${TARGET_ENVIRONMENT}\"[[:space:]]*$" "$config" || {
+            echo "The environment value in $config must be ${TARGET_ENVIRONMENT}."
+            exit 1
+          }
           config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
           if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
             echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
             exit 1
           fi
           if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
-            echo "Set ARM_* and TF_BACKEND_* variables in the dev GitHub Environment."
+            echo "Set ARM_* and TF_BACKEND_* variables in the ${TARGET_ENVIRONMENT} GitHub Environment."
             exit 1
           fi
 
@@ -100,7 +108,7 @@ jobs:
             -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
             -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
             -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
-            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="key=${TARGET_ENVIRONMENT}.terraform.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
 
@@ -111,7 +119,7 @@ jobs:
         run: terraform state list
 
       - name: Create destroy plan
-        run: terraform plan -input=false -var-file="../environments/dev/terraform.tfvars" -destroy -out=destroy.tfplan
+        run: terraform plan -input=false -var-file="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars" -destroy -out=destroy.tfplan
 
       - name: Show destroy plan
         run: terraform show -no-color destroy.tfplan
@@ -119,7 +127,7 @@ jobs:
       - name: Upload reviewed destroy plan
         uses: actions/upload-artifact@v4
         with:
-          name: dev-destroy-plan
+          name: ${{ inputs.environment || 'dev' }}-destroy-plan
           path: terraform/root/destroy.tfplan
           retention-days: 1
           if-no-files-found: error
@@ -127,9 +135,10 @@ jobs:
   apply-destroy:
     needs: plan-destroy
     runs-on: ubuntu-latest
-    environment: dev-destroy
+    environment: ${{ format('{0}-destroy', inputs.environment || 'dev') }}
 
     env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       ARM_USE_OIDC: "true"
       ARM_CLIENT_ID: ${{ vars.DESTROY_ARM_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.DESTROY_ARM_TENANT_ID }}
@@ -152,14 +161,19 @@ jobs:
       - name: Verify destroy identity configuration
         shell: bash
         run: |
-          config="../environments/dev/terraform.tfvars"
+          config="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
+          test -f "$config" || { echo "Missing $config"; exit 1; }
+          grep -Eq "^environment[[:space:]]*=[[:space:]]*\"${TARGET_ENVIRONMENT}\"[[:space:]]*$" "$config" || {
+            echo "The environment value in $config must be ${TARGET_ENVIRONMENT}."
+            exit 1
+          }
           config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
           if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
             echo "DESTROY_ARM_SUBSCRIPTION_ID must match subscription_id in $config."
             exit 1
           fi
           if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
-            echo "Set DESTROY_ARM_* and TF_BACKEND_* variables in the dev-destroy GitHub Environment."
+            echo "Set DESTROY_ARM_* and TF_BACKEND_* variables in the ${TARGET_ENVIRONMENT}-destroy GitHub Environment."
             exit 1
           fi
 
@@ -182,14 +196,14 @@ jobs:
             -backend-config="resource_group_name=${TF_BACKEND_RESOURCE_GROUP}" \
             -backend-config="storage_account_name=${TF_BACKEND_STORAGE_ACCOUNT}" \
             -backend-config="container_name=${TF_BACKEND_CONTAINER}" \
-            -backend-config="key=dev.terraform.tfstate" \
+            -backend-config="key=${TARGET_ENVIRONMENT}.terraform.tfstate" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
 
       - name: Download destroy plan
         uses: actions/download-artifact@v4
         with:
-          name: dev-destroy-plan
+          name: ${{ inputs.environment || 'dev' }}-destroy-plan
           path: terraform/root
 
       - name: Apply approved destroy plan
