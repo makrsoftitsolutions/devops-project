@@ -170,7 +170,7 @@ variable "enable_aks_acr_pull" {
 }
 
 variable "deployment_principal_object_id" {
-  description = "Optional object ID of the deployment service principal to authorize for ACR role assignments. Defaults to the identity running Terraform."
+  description = "Object ID of the GitHub Actions service principal that deploys this environment."
   type        = string
-  default     = null
 }
+

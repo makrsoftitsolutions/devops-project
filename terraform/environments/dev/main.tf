@@ -194,9 +194,9 @@ resource "azurerm_role_assignment" "aks_network_contributor" {
   principal_type       = "ServicePrincipal"
 }
 
-# Allows the deployment identity to create the AKS AcrPull assignment on this
-# registry. The first creation must be bootstrapped by an identity that already
-# has roleAssignments/write permission at this scope.
+# This assignment is bootstrapped once by an Azure identity that already has
+# roleAssignments/write on the ACR. Afterward, the GitHub OIDC identity can
+# manage the AKS AcrPull assignment through Terraform.
 resource "azurerm_role_assignment" "deployment_acr_rbac_admin" {
   count = (
     var.enable_acr &&
@@ -205,7 +205,7 @@ resource "azurerm_role_assignment" "deployment_acr_rbac_admin" {
 
   scope                = module.acr[0].id
   role_definition_name = "Role Based Access Control Administrator"
-  principal_id         = coalesce(var.deployment_principal_object_id, data.azurerm_client_config.current.object_id)
+  principal_id         = var.deployment_principal_object_id
   principal_type       = "ServicePrincipal"
 }
 
@@ -227,6 +227,8 @@ module "aks" {
   depends_on                 = [azurerm_role_assignment.aks_network_contributor]
 }
 
+# The GitHub deployment identity must already have roleAssignments/write at the
+# ACR scope (for example, Role Based Access Control Administrator).
 resource "azurerm_role_assignment" "aks_acr_pull" {
   count = (
     var.enable_aks &&
