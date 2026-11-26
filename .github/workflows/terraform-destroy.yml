@@ -1,10 +1,11 @@
+
 name: Terraform Destroy (manual)
 
 on:
   workflow_dispatch:
     inputs:
       confirm_destroy:
-        description: "Type DESTROY to confirm"
+        description: "Type DESTROY to confirm infrastructure deletion"
         required: true
         type: string
 
@@ -24,20 +25,32 @@ jobs:
     if: ${{ inputs.confirm_destroy == 'DESTROY' }}
     runs-on: ubuntu-latest
     environment: dev
+
     defaults:
       run:
         working-directory: terraform/environments/dev
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
+      # 1. Checkout repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Azure OIDC Login
+      - name: Azure Login
+        uses: azure/login@v2
         with:
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      - uses: hashicorp/setup-terraform@v3
+
+      # 3. Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
-      - name: Terraform init
+
+      # 4. Initialize Terraform remote backend
+      - name: Terraform Init
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
@@ -45,9 +58,45 @@ jobs:
             -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
             -backend-config="key=${{ vars.TF_BACKEND_KEY }}" \
             -backend-config="use_azuread_auth=true"
-      - name: Identify Pipeline RBAC Assignment
+
+      # 5. Verify Terraform RBAC resource exists
+      - name: Verify Pipeline RBAC Assignment
         run: |
-          terraform state list | grep azurerm_role_assignment
-      - run: terraform plan -destroy -out=destroy.tfplan
-      - run: terraform show destroy.tfplan
-      - run: terraform apply -auto-approve destroy.tfplan
+          terraform state list > terraform-state.txt
+
+          RESOURCE='module.rbac_deployment_management[0].azurerm_role_assignment.this["deployment_manage_vm_roles"]'
+
+          if grep -Fxq "$RESOURCE" terraform-state.txt; then
+            echo "Target RBAC assignment exists in Terraform state."
+          else
+            echo "::error::Expected RBAC resource not found. Stopping destroy."
+            exit 1
+          fi
+
+      # 6. Preserve pipeline RBAC assignment
+      - name: Preserve Pipeline RBAC Assignment
+        run: |
+          terraform state rm \
+            'module.rbac_deployment_management[0].azurerm_role_assignment.this["deployment_manage_vm_roles"]'
+
+      # 7. Generate Terraform Destroy Plan
+      - name: Terraform Destroy Plan
+        run: |
+          terraform plan -destroy -out=destroy.tfplan
+
+      # 8. Display resources scheduled for deletion
+      - name: Review Terraform Destroy Plan
+        run: |
+          terraform show destroy.tfplan
+
+      # 9. Execute Terraform Destroy
+      - name: Terraform Destroy Apply
+        run: |
+          terraform apply -auto-approve destroy.tfplan
+
+      # 10. Display completion
+      - name: Destroy Summary
+        if: success()
+        run: |
+          echo "Terraform destroy completed successfully."
+          echo "Pipeline RBAC assignment was preserved."
