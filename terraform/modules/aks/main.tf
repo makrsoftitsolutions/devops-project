@@ -61,7 +61,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
 
   name                  = var.user_node_pool_name
   kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
-  vm_size               = var.system_vm_size
+  vm_size               = var.user_node_pool_vm_size
   mode                  = "User"
   os_type               = "Linux"
   os_sku                = "AzureLinux"

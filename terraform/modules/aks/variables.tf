@@ -44,6 +44,11 @@ variable "user_node_pool_name" {
     error_message = "Linux AKS node pool names must start with a lowercase letter and contain at most 12 lowercase alphanumeric characters."
   }
 }
+variable "user_node_pool_vm_size" {
+  description = "Azure VM SKU for the AKS user node pool."
+  type        = string
+  default     = "Standard_B2als_v2"
+}
 variable "enable_user_node_pool" {
   description = "Whether to create the autoscaling AKS user node pool."
   type        = bool
