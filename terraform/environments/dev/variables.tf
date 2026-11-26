@@ -44,8 +44,9 @@ variable "hub_subnets" {
     service_endpoints = optional(list(string), [])
   }))
   default = {
-    AzureFirewallSubnet = { address_prefixes = ["10.0.1.0/26"] }
-    AzureBastionSubnet  = { address_prefixes = ["10.0.2.0/26"] }
+    AzureFirewallSubnet           = { address_prefixes = ["10.0.1.0/26"] }
+    AzureBastionSubnet            = { address_prefixes = ["10.0.2.0/26"] }
+    AzureFirewallManagementSubnet = { address_prefixes = ["10.0.3.0/26"] }
   }
 }
 

@@ -137,13 +137,14 @@ module "log_analytics" {
 }
 
 module "firewall" {
-  count               = var.enable_firewall ? 1 : 0
-  source              = "../../modules/firewall"
-  name                = "afw-${var.project}-${var.environment}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.hub.name
-  subnet_id           = module.hub_network.subnet_ids["AzureFirewallSubnet"]
-  tags                = local.common_tags
+  count                = var.enable_firewall ? 1 : 0
+  source               = "../../modules/firewall"
+  name                 = "afw-${var.project}-${var.environment}"
+  location             = var.location
+  resource_group_name  = azurerm_resource_group.hub.name
+  subnet_id            = module.hub_network.subnet_ids["AzureFirewallSubnet"]
+  management_subnet_id = module.hub_network.subnet_ids["AzureFirewallManagementSubnet"]
+  tags                 = local.common_tags
 }
 
 module "bastion" {

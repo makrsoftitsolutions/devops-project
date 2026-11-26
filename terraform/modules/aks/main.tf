@@ -45,4 +45,13 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   tags = var.tags
+
+  lifecycle {
+    # Azure adds default upgrade settings to the node pool even when they are
+    # omitted from configuration. Ignore that service-managed block to avoid
+    # an in-place AKS update on every plan/apply.
+    ignore_changes = [
+      default_node_pool[0].upgrade_settings,
+    ]
+  }
 }
