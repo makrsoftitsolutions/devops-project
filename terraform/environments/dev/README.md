@@ -14,6 +14,7 @@ The values in `terraform.tfvars` enable:
 | Management VM | Enabled | Private VM in the spoke; access via Bastion |
 | Azure Container Registry (ACR) | Enabled | Admin account disabled |
 | Azure Kubernetes Service (AKS) | Enabled | Private cluster with a user-assigned control-plane identity |
+| AKS user node pool | Enabled | `usernodepl1`; autoscaler maintains 2–3 `Standard_D2s_v5` nodes |
 | AKS network permission | Enabled | AKS identity has `Network Contributor` on the AKS subnet |
 | AKS image pull permission | Enabled | `AcrPull` is granted to the AKS kubelet identity on ACR |
 | Azure Firewall | Temporarily disabled | `enable_firewall = false` while the subscription is at its Central India public IP quota; re-enable after quota is increased |
@@ -35,7 +36,7 @@ Terraform manages these assignments through the reusable `terraform/modules/rbac
 | `aks_acr_pull` | AKS kubelet identity | ACR resource | Allows AKS nodes to pull container images |
 | `management_vm_resource_reader` | Management VM system-assigned identity | Platform resource group | Allows Azure CLI to discover and read dev resources |
 | `management_vm_aks_cluster_user` | Management VM system-assigned identity | AKS cluster | Allows downloading a user kubeconfig |
-| `management_vm_aks_rbac` | Management VM system-assigned identity | AKS cluster | Read-only Kubernetes API access by default |
+| `management_vm_aks_rbac` | Management VM system-assigned identity | AKS cluster | `Azure Kubernetes Service RBAC Cluster Admin` for read/write cluster administration |
 
 The deployment identity's existing `Role Based Access Control Administrator` assignment is limited to the ACR resource. It is required because Terraform creates the `AcrPull` and `AcrPush` assignments. A second, condition-constrained assignment is defined for the platform resource group so GitHub Actions can manage only the management VM's Reader and AKS role assignments.
 
@@ -45,7 +46,7 @@ The GitHub deployment service principal was checked and currently has `Contribut
 
 ### Use the management VM to access AKS
 
-The management VM's system-assigned identity is granted Azure `Reader` on the platform resource group, the AKS Cluster User role, and `Azure Kubernetes Service RBAC Reader` on the cluster. The Kubernetes role can be changed with `management_vm_aks_rbac_role`; use `Azure Kubernetes Service RBAC Writer` only if the VM needs to deploy or change workloads.
+The management VM's system-assigned identity is granted Azure `Reader` on the platform resource group, the AKS Cluster User role, and `Azure Kubernetes Service RBAC Cluster Admin` on the cluster. This permits cluster-wide read/write operations, including listing nodes. It is a powerful permission; change `management_vm_aks_rbac_role` to Reader or Writer if full cluster administration is not needed. The GitHub deployment identity's ABAC condition limits this delegated role to the management VM identity and the three supported AKS RBAC roles.
 
 The GitHub deployment identity cannot grant itself permission to create role assignments. Before GitHub Actions can create the management VM assignments, bootstrap its constrained RBAC delegation once with an Azure identity that already has role-assignment write permission on `rg-platform-dev`. That delegation is limited to assigning `Reader`, `Azure Kubernetes Service Cluster User Role`, and the configured AKS RBAC role to the management VM identity at this resource group or its child scopes. It cannot assign these roles to other principals. The same authorized identity needs access to the Terraform remote state. From PowerShell in this directory, run:
 
@@ -75,6 +76,8 @@ The Application Gateway subnet is dedicated and currently has no NSG or route-ta
 `enable_workload_firewall_default_route` defaults to `false`. Enable it only after the firewall policy has allow rules for required workload and AKS egress. When enabled, Terraform routes the workloads subnet's `0.0.0.0/0` traffic to the Firewall private IP. The AKS subnet is not associated with this route table.
 
 Key Vault uses `privatelink.vaultcore.azure.net`, linked to the spoke VNet, and the private endpoint is placed in `snet-private`. The management VM can resolve the private vault address through the spoke link. Any other client network that needs vault access must also have a suitable DNS and network path.
+
+The AKS user pool is configured with autoscaling between two and three nodes, using the same VM size as the system pool. Linux AKS node pool names are limited to 12 lowercase alphanumeric characters, so the requested `usernodepool1` is represented by `usernodepl1`.
 
 The AKS ingress endpoint has not been deployed yet, so `application_gateway_backend_fqdn` remains `null`. Set it to the ingress FQDN after deployment before directing application traffic through the gateway.
 

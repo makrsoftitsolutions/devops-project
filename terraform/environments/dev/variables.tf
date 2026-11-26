@@ -146,6 +146,24 @@ variable "aks_system_vm_size" {
   default = "Standard_D2s_v5"
 }
 
+variable "aks_user_node_pool_name" {
+  description = "Name for the Linux AKS user pool; limited to 12 lowercase alphanumeric characters."
+  type        = string
+  default     = "usernodepl1"
+}
+
+variable "aks_user_node_pool_min_count" {
+  description = "Minimum number of nodes maintained in the AKS user pool."
+  type        = number
+  default     = 2
+}
+
+variable "aks_user_node_pool_max_count" {
+  description = "Maximum number of nodes for autoscaling in the AKS user pool."
+  type        = number
+  default     = 3
+}
+
 variable "aks_admin_group_object_ids" {
   type    = list(string)
   default = []

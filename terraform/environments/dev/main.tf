@@ -8,11 +8,11 @@ locals {
   hub_rg_name   = "rg-network-${var.environment}"
   spoke_rg_name = "rg-platform-${var.environment}"
 
-  management_vm_aks_rbac_role_definition_id = {
-    "Azure Kubernetes Service RBAC Reader"        = "7f6c6a51-bcf8-42ba-9220-52d62157d7db"
-    "Azure Kubernetes Service RBAC Writer"        = "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb"
-    "Azure Kubernetes Service RBAC Cluster Admin" = "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b"
-  }[var.management_vm_aks_rbac_role]
+  management_vm_delegated_aks_role_definition_ids = join(", ", [
+    "7f6c6a51-bcf8-42ba-9220-52d62157d7db", # Azure Kubernetes Service RBAC Reader
+    "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb", # Azure Kubernetes Service RBAC Writer
+    "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b", # Azure Kubernetes Service RBAC Cluster Admin
+  ])
 
   workload_routes = var.enable_workload_firewall_default_route ? {
     default_to_firewall = {
@@ -274,6 +274,9 @@ module "aks" {
   identity_id                = module.aks_identity[0].id
   system_node_count          = var.aks_system_node_count
   system_vm_size             = var.aks_system_vm_size
+  user_node_pool_name        = var.aks_user_node_pool_name
+  user_node_pool_min_count   = var.aks_user_node_pool_min_count
+  user_node_pool_max_count   = var.aks_user_node_pool_max_count
   admin_group_object_ids     = var.aks_admin_group_object_ids
   log_analytics_workspace_id = var.enable_log_analytics ? module.log_analytics[0].id : null
   tags                       = local.common_tags
@@ -315,14 +318,10 @@ module "rbac_deployment_management" {
       principal_id         = var.deployment_principal_object_id
       condition_version    = "2.0"
       condition = format(
-        "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {%s, %s, %s} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {%s, %s, %s} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s}))",
-        "acdd72a7-3385-48ef-bd42-f606fba81ae7",
-        "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
-        local.management_vm_aks_rbac_role_definition_id,
+        "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {acdd72a7-3385-48ef-bd42-f606fba81ae7, 4abbcc35-e782-43d8-92c5-2d3f1bd2253f, %s} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {acdd72a7-3385-48ef-bd42-f606fba81ae7, 4abbcc35-e782-43d8-92c5-2d3f1bd2253f, %s} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {%s}))",
+        local.management_vm_delegated_aks_role_definition_ids,
         module.management_vm[0].principal_id,
-        "acdd72a7-3385-48ef-bd42-f606fba81ae7",
-        "4abbcc35-e782-43d8-92c5-2d3f1bd2253f",
-        local.management_vm_aks_rbac_role_definition_id,
+        local.management_vm_delegated_aks_role_definition_ids,
         module.management_vm[0].principal_id
       )
     }
@@ -464,6 +463,10 @@ output "acr_login_server" {
 
 output "aks_name" {
   value = var.enable_aks ? module.aks[0].name : null
+}
+
+output "aks_user_node_pool_name" {
+  value = var.enable_aks ? module.aks[0].user_node_pool_name : null
 }
 
 output "key_vault_uri" {

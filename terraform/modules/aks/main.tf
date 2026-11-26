@@ -55,3 +55,19 @@ resource "azurerm_kubernetes_cluster" "this" {
     ]
   }
 }
+
+resource "azurerm_kubernetes_cluster_node_pool" "user" {
+  name                  = var.user_node_pool_name
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  vm_size               = var.system_vm_size
+  mode                  = "User"
+  os_type               = "Linux"
+  os_sku                = "AzureLinux"
+  vnet_subnet_id        = var.subnet_id
+
+  auto_scaling_enabled = true
+  min_count            = var.user_node_pool_min_count
+  max_count            = var.user_node_pool_max_count
+
+  tags = var.tags
+}
