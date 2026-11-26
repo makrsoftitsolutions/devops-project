@@ -70,6 +70,12 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   auto_scaling_enabled = true
   min_count            = var.user_node_pool_min_count
   max_count            = var.user_node_pool_max_count
+  node_count           = var.user_node_pool_min_count
+
+  lifecycle {
+    # Let AKS Cluster Autoscaler control the running count after creation.
+    ignore_changes = [node_count]
+  }
 
   tags = var.tags
 }

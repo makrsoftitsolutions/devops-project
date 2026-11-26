@@ -59,8 +59,8 @@ variable "user_node_pool_min_count" {
   default = 1
 
   validation {
-    condition     = var.user_node_pool_min_count >= 1
-    error_message = "The user node pool minimum must be at least one node."
+    condition     = var.user_node_pool_min_count >= 0
+    error_message = "The user node pool minimum cannot be negative."
   }
 }
 variable "user_node_pool_max_count" {
