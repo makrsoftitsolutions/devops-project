@@ -220,13 +220,27 @@ resource "azurerm_role_assignment" "aks_network_contributor" {
 resource "azurerm_role_assignment" "deployment_acr_rbac_admin" {
   count = (
     var.enable_acr &&
-    var.enable_aks_acr_pull
+    (var.enable_aks_acr_pull || var.enable_acr_push)
   ) ? 1 : 0
 
   scope                = module.acr[0].id
   role_definition_name = "Role Based Access Control Administrator"
   principal_id         = var.deployment_principal_object_id
   principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_role_assignment" "deployment_acr_push" {
+  count = (
+    var.enable_acr &&
+    var.enable_acr_push
+  ) ? 1 : 0
+
+  scope                = module.acr[0].id
+  role_definition_name = "AcrPush"
+  principal_id         = var.deployment_principal_object_id
+  principal_type       = "ServicePrincipal"
+
+  depends_on = [azurerm_role_assignment.deployment_acr_rbac_admin]
 }
 
 module "aks" {

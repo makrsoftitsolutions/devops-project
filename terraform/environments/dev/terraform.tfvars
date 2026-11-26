@@ -5,12 +5,13 @@ environment = "dev"
 project     = "makrsoft"
 
 enable_log_analytics                   = true
-enable_firewall                        = true
+enable_firewall                        = false
 enable_workload_firewall_default_route = false
 enable_bastion                         = true
-enable_application_gateway             = true
+enable_application_gateway             = false
 application_gateway_backend_fqdn       = null
 enable_acr                             = true
+enable_acr_push                        = true
 enable_aks                             = true
 enable_aks_acr_pull                    = true
 deployment_principal_object_id         = "33bf4292-01a6-45ef-a0be-8ce660ae9b53"

@@ -182,6 +182,12 @@ variable "enable_aks_acr_pull" {
   default     = false
 }
 
+variable "enable_acr_push" {
+  description = "Grant the GitHub deployment service principal AcrPush on ACR for the image build workflow."
+  type        = bool
+  default     = false
+}
+
 variable "deployment_principal_object_id" {
   description = "Object ID of the GitHub Actions service principal that deploys this environment."
   type        = string
