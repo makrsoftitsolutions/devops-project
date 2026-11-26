@@ -1,5 +1,18 @@
 data "azurerm_client_config" "current" {}
 
+# Provisioning stages are grouped below for review, but Terraform does not use
+# source-file order as a deployment sequence. Resource references and explicit
+# depends_on edges define the DAG; independent resources run in parallel.
+#
+# 1. Validation guards and resource groups
+# 2. Hub/spoke networks, subnet controls, routes, and peering
+# 3. Shared foundation services (monitoring, management VM, edge)
+# 4. AKS identity and subnet role assignment, then ACR and AKS
+# 5. AKS-dependent services and role assignments
+# 6. Optional data services and Azure Monitor
+# 7. Private DNS zones/links before private endpoints
+# 8. Diagnostics and data-plane role assignments
+
 locals {
   common_tags = merge(var.tags, {
     project     = var.project
@@ -196,9 +209,14 @@ resource "terraform_data" "firewall_route_guard" {
       condition     = !var.enable_workload_firewall_default_route || var.enable_firewall
       error_message = "Enable Azure Firewall before routing workload traffic through it."
     }
+    precondition {
+      condition     = !var.enable_firewall_management_ip || var.enable_firewall
+      error_message = "Enable Azure Firewall before enabling its management IP configuration."
+    }
   }
 }
 
+# Stage 1: create resource-group scopes before their network and service resources.
 resource "azurerm_resource_group" "hub" {
   name     = local.hub_rg_name
   location = var.location
@@ -231,6 +249,8 @@ module "spoke_network" {
   tags                = local.common_tags
 }
 
+# Stage 2: network controls and connectivity. Subnet/VNet references create
+# implicit dependencies; the management VM waits for both peerings below.
 resource "terraform_data" "new_services_guard" {
   input = {
     enable_postgres_flexible_server   = var.enable_postgres_flexible_server
@@ -327,6 +347,7 @@ module "spoke_to_hub" {
   remote_virtual_network_id = module.hub_network.id
 }
 
+# Stage 3: shared foundation services. The management VM waits for both peerings.
 resource "terraform_data" "management_vm_ssh_key_guard" {
   input = var.management_admin_ssh_public_key
 
@@ -385,7 +406,8 @@ module "firewall" {
   location             = var.location
   resource_group_name  = azurerm_resource_group.hub.name
   subnet_id            = module.hub_network.subnet_ids["AzureFirewallSubnet"]
-  management_subnet_id = module.hub_network.subnet_ids["AzureFirewallManagementSubnet"]
+  enable_management_ip = var.enable_firewall_management_ip
+  management_subnet_id = var.enable_firewall_management_ip ? module.hub_network.subnet_ids["AzureFirewallManagementSubnet"] : null
   tags                 = local.common_tags
 }
 
@@ -399,21 +421,7 @@ module "bastion" {
   tags                = local.common_tags
 }
 
-module "application_gateway" {
-  count               = var.enable_application_gateway ? 1 : 0
-  source              = "../modules/application-gateway"
-  name                = local.application_gateway_name
-  location            = var.location
-  resource_group_name = azurerm_resource_group.spoke.name
-  subnet_id           = module.spoke_network.subnet_ids["snet-appgw"]
-  backend_fqdn        = var.application_gateway_backend_fqdn
-  zones               = var.application_gateway_zones
-  tags                = local.common_tags
-
-  # When AKS is enabled, wait for its private cluster before provisioning the gateway.
-  depends_on = [module.aks]
-}
-
+# Stage 4: create AKS identity and subnet authorization before the cluster.
 module "acr" {
   count                         = var.enable_acr ? 1 : 0
   source                        = "../modules/acr"
@@ -509,6 +517,7 @@ module "aks" {
   depends_on                 = [module.rbac_aks_network]
 }
 
+# Stage 5: role assignments follow their principals and target resources.
 # The GitHub deployment identity must already have roleAssignments/write at the
 # ACR scope (for example, Role Based Access Control Administrator).
 module "rbac_aks_acr_pull" {
@@ -528,6 +537,21 @@ module "rbac_aks_acr_pull" {
   }
 
   depends_on = [module.rbac_deployment_acr_admin]
+}
+
+# Stage 5: the gateway is downstream of the AKS cluster when AKS is enabled.
+module "application_gateway" {
+  count               = var.enable_application_gateway ? 1 : 0
+  source              = "../modules/application-gateway"
+  name                = local.application_gateway_name
+  location            = var.location
+  resource_group_name = azurerm_resource_group.spoke.name
+  subnet_id           = module.spoke_network.subnet_ids["snet-appgw"]
+  backend_fqdn        = var.application_gateway_backend_fqdn
+  zones               = var.application_gateway_zones
+  tags                = local.common_tags
+
+  depends_on = [module.aks]
 }
 
 # Delegates only the role assignments required by the management VM, and only
@@ -598,6 +622,8 @@ moved {
   to   = module.rbac_aks_acr_pull[0].azurerm_role_assignment.this["aks_acr_pull"]
 }
 
+# Stage 6/7: optional services, private DNS, and endpoints. The service ID and
+# DNS-link references below enforce target-before-endpoint dependencies.
 resource "azurerm_private_dns_zone" "acr" {
   count               = var.enable_acr_private_endpoint ? 1 : 0
   name                = "privatelink.azurecr.io"

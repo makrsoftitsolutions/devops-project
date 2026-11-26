@@ -8,6 +8,7 @@ resource "azurerm_public_ip" "this" {
 }
 
 resource "azurerm_public_ip" "management" {
+  count               = var.enable_management_ip ? 1 : 0
   name                = "${var.name}-management-pip"
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -29,10 +30,13 @@ resource "azurerm_firewall" "this" {
     public_ip_address_id = azurerm_public_ip.this.id
   }
 
-  management_ip_configuration {
-    name                 = "management"
-    subnet_id            = var.management_subnet_id
-    public_ip_address_id = azurerm_public_ip.management.id
+  dynamic "management_ip_configuration" {
+    for_each = var.enable_management_ip ? [1] : []
+    content {
+      name                 = "management"
+      subnet_id            = var.management_subnet_id
+      public_ip_address_id = azurerm_public_ip.management[0].id
+    }
   }
 
   tags = var.tags

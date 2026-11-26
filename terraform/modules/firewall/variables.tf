@@ -16,7 +16,14 @@ variable "subnet_id" {
 
 variable "management_subnet_id" {
   type        = string
-  description = "AzureFirewallManagementSubnet ID required by the Basic SKU."
+  default     = null
+  description = "AzureFirewallManagementSubnet ID when a separate management IP is enabled for forced tunneling."
+}
+
+variable "enable_management_ip" {
+  type        = bool
+  default     = false
+  description = "Create the separate management public IP and management configuration for forced tunneling."
 }
 
 variable "tags" {

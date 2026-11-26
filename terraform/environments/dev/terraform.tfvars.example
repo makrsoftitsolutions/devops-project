@@ -1,5 +1,5 @@
 subscription_id = "00000000-0000-0000-0000-000000000000"
-location        = "centralindia"
+location        = "eastus"
 environment     = "dev"
 project         = "makrsoft"
 
@@ -30,6 +30,7 @@ spoke_subnets = {
 
 enable_log_analytics        = false
 enable_firewall             = false
+enable_firewall_management_ip = false
 enable_bastion              = false
 enable_application_gateway  = false
 application_gateway_zones  = ["1", "2", "3"]
@@ -38,6 +39,7 @@ enable_acr_private_endpoint = false
 acr_public_network_access_enabled = true
 acr_sku                     = "Basic"
 enable_aks                  = false
+aks_user_node_pool_vm_size  = "Standard_D2s_v5"
 enable_key_vault            = false
 enable_postgres_flexible_server = false
 enable_storage_account         = false

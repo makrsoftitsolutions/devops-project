@@ -1,6 +1,6 @@
 subscription_id = "aa61b080-74f9-41ed-a75f-8e60a60ccae4"
 
-location    = "centralindia"
+location    = "eastus"
 environment = "dev"
 project     = "makrsoft"
 
@@ -31,6 +31,7 @@ spoke_subnets = {
 
 enable_log_analytics                    = true
 enable_firewall                         = false
+enable_firewall_management_ip           = false
 enable_workload_firewall_default_route  = false
 enable_bastion                          = true
 enable_application_gateway              = false
@@ -82,7 +83,7 @@ management_vm_zone                      = "1"
 management_admin_username               = "azureadmin"
 management_vm_aks_rbac_role             = "Azure Kubernetes Service RBAC Cluster Admin"
 aks_user_node_pool_name                 = "usernodepl1"
-aks_user_node_pool_vm_size              = "Standard_EC2as_v5"
+aks_user_node_pool_vm_size              = "Standard_D2s_v5"
 enable_aks_user_node_pool               = true
 aks_user_node_pool_min_count            = 0
 aks_user_node_pool_max_count            = 2

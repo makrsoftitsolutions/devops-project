@@ -96,6 +96,12 @@ variable "enable_firewall" {
   default = false
 }
 
+variable "enable_firewall_management_ip" {
+  description = "Create Azure Firewall's separate management public IP for forced tunneling. Leave off for normal deployments to conserve the regional public-IP quota."
+  type        = bool
+  default     = false
+}
+
 variable "enable_workload_firewall_default_route" {
   description = "Route workload-subnet internet egress through Azure Firewall. Enable only after configuring firewall allow rules."
   type        = bool
@@ -413,7 +419,7 @@ variable "aks_user_node_pool_name" {
 variable "aks_user_node_pool_vm_size" {
   description = "AKS-compatible Azure VM size for the user node pool."
   type        = string
-  default     = "Standard_EC2as_v5"
+  default     = "Standard_D2s_v5"
 }
 
 variable "enable_aks_user_node_pool" {

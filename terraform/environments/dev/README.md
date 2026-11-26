@@ -11,9 +11,9 @@ The shared Terraform root is in `terraform/root`. This folder contains only the 
 | Azure Bastion | Enabled in the hub |
 | ACR | Enabled; admin account disabled |
 | AKS | Enabled; private cluster with user-assigned control-plane identity |
-| AKS user pool | Enabled; `Standard_EC2as_v5`, autoscale 0–2, starts at zero nodes |
-| Azure Firewall | Disabled while the subscription's public IP quota is exhausted |
-| Application Gateway | Disabled while the subscription's public IP quota is exhausted; backend FQDN is unset |
+| AKS user pool | Enabled; `Standard_D2s_v5`, autoscale 0–2, starts at zero nodes |
+| Azure Firewall | Disabled to preserve the limited regional public IP quota; its separate management IP is optional and off unless forced tunneling is required |
+| Application Gateway | Disabled to preserve the limited regional public IP quota; backend FQDN is unset |
 | Log Analytics | Enabled and connected to AKS monitoring |
 | Key Vault | Enabled with RBAC, private endpoint, and private DNS |
 | PostgreSQL Flexible Server | Optional; VNet-injected in a delegated subnet with private DNS |
@@ -26,7 +26,7 @@ The shared Terraform root is in `terraform/root`. This folder contains only the 
 
 PostgreSQL, Storage, Event Hubs, Service Bus, and Application Insights are disabled in dev by default. Azure Monitor Private Link is enabled for the existing Log Analytics workspace. Review the plan, SKU availability, recurring private-endpoint costs, and app identity/RBAC before enabling other services. PostgreSQL additionally needs `POSTGRES_ADMIN_PASSWORD` configured in the protected `dev`, `dev-bootstrap`, and `dev-destroy` GitHub Environments. Do not place that password in `terraform.tfvars`. Generated PostgreSQL, Storage, Event Hubs, and Service Bus names may need environment-specific overrides for global uniqueness.
 
-The user pool can add nodes only when Central India regional and ECASv5-family quota is available. With regional vCPU quota full, workloads requiring that pool can remain pending. The AKS system pool and management VM currently consume the four regional vCPUs shown by the subscription quota output.
+East US is selected after comparing the live subscription limits and VM size catalogs in East US, UK South, Southeast Asia, and South India. On 2026-11-26, Azure listed 1,698 VM size entries in East US, 1,362 in UK South, 1,299 in Southeast Asia, and 1,120 in South India. Both configured sizes (`Standard_D2s_v5` for the AKS user pool and `Standard_B2als_v2` for the management VM) were listed in all four regions. The subscription's limits were also the same in each checked region: 4 regional vCPUs, 4 DSv5-family vCPUs, and 3 public IP addresses. The broader East US SKU catalog therefore does not increase this subscription's quota or guarantee compute capacity. The configured system pool and management VM each use 2 vCPUs, consuming the 4-vCPU quota; the user pool starts at zero and cannot scale until quota is increased or another VM is removed. With AKS standard load balancer egress and Bastion, only one public IP remains under the limit of three. Enabling both public Azure Firewall and public Application Gateway would exceed that limit; use one at a time, make one frontend private, or request more public IP quota. East US moves all regional resources and data out of India, so retain it only if that residency and the added user latency are acceptable. Recheck `az vm list-usage --location eastus`, `az network list-usages --location eastus`, and `az vm list-sizes --location eastus` before applying. SKU listings do not guarantee current capacity; Azure can still reject a deployment when a size is temporarily unavailable.
 
 ## Environment inputs and naming
 
