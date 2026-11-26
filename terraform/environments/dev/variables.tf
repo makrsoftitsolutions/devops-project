@@ -153,13 +153,13 @@ variable "aks_user_node_pool_name" {
 }
 
 variable "aks_user_node_pool_vm_size" {
-  description = "Azure VM size for the AKS user node pool."
+  description = "AKS-compatible Azure VM size for the user node pool."
   type        = string
-  default     = "Standard_B2als_v2"
+  default     = "Standard_EC2as_v5"
 }
 
 variable "enable_aks_user_node_pool" {
-  description = "Enable the autoscaling AKS user pool after regional vCPU quota is available."
+  description = "Enable the autoscaling AKS user pool."
   type        = bool
   default     = true
 }

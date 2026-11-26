@@ -45,9 +45,9 @@ variable "user_node_pool_name" {
   }
 }
 variable "user_node_pool_vm_size" {
-  description = "Azure VM SKU for the AKS user node pool."
+  description = "AKS-compatible Azure VM SKU for the user node pool."
   type        = string
-  default     = "Standard_B2als_v2"
+  default     = "Standard_EC2as_v5"
 }
 variable "enable_user_node_pool" {
   description = "Whether to create the autoscaling AKS user node pool."
