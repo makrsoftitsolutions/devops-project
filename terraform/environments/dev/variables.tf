@@ -161,13 +161,13 @@ variable "enable_aks_user_node_pool" {
 variable "aks_user_node_pool_min_count" {
   description = "Minimum number of nodes maintained in the AKS user pool."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "aks_user_node_pool_max_count" {
   description = "Maximum number of nodes for autoscaling in the AKS user pool."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "aks_admin_group_object_ids" {

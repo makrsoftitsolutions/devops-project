@@ -51,7 +51,7 @@ variable "enable_user_node_pool" {
 }
 variable "user_node_pool_min_count" {
   type    = number
-  default = 2
+  default = 1
 
   validation {
     condition     = var.user_node_pool_min_count >= 1
@@ -60,7 +60,7 @@ variable "user_node_pool_min_count" {
 }
 variable "user_node_pool_max_count" {
   type    = number
-  default = 3
+  default = 2
 
   validation {
     condition     = var.user_node_pool_max_count >= var.user_node_pool_min_count

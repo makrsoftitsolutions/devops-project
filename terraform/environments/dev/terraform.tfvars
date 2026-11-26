@@ -22,8 +22,8 @@ management_admin_username              = "azureadmin"
 management_vm_aks_rbac_role            = "Azure Kubernetes Service RBAC Cluster Admin"
 aks_user_node_pool_name                = "usernodepl1"
 enable_aks_user_node_pool              = false
-aks_user_node_pool_min_count           = 2
-aks_user_node_pool_max_count           = 3
+aks_user_node_pool_min_count           = 1
+aks_user_node_pool_max_count           = 2
 management_admin_ssh_public_key        = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMbJA7junOZmDFYgBAHZnRag93yNaHng3CkqWjU733WL aks-management-dev"
 
 acr_name       = "makrsoftdevacr001"
