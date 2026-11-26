@@ -37,6 +37,16 @@ variable "vm_size" {
   default = "Standard_B2s"
 }
 
+variable "user_assigned_identity_id" {
+  description = "User-assigned identity attached to the management VM."
+  type        = string
+}
+
+variable "user_assigned_identity_principal_id" {
+  description = "Principal ID of the user-assigned identity attached to the management VM."
+  type        = string
+}
+
 variable "zone" {
   description = "Availability zone for the management VM, or null for regional placement."
   type        = string

@@ -43,7 +43,7 @@ Use a separate, read-only plan app. Set repository variables `PLAN_ARM_CLIENT_ID
 
 An identity cannot grant itself `Microsoft.Authorization/roleAssignments/write`. Use a separate app/service principal for bootstrap, with only the `<env>-bootstrap` OIDC subject. Do not add subscription-level role-assignment permissions to the normal deployment app if that app also trusts `main` or `pull_request` subjects: any workflow able to get a token for one of those subjects could use the elevated permission.
 
-For a fresh dev deployment, the targeted bootstrap plan may also create the spoke resource group and ACR as dependencies. An existing Owner must seed the bootstrap app's initial permissions. The following Cloud Shell Bash example creates the app, service principal, and dev-bootstrap federated credential. It then grants temporary subscription-level `Contributor` and `User Access Administrator` plus state-storage access so the first targeted plan can create its dependencies and role assignments. Protect the `dev-bootstrap` GitHub Environment with required reviewers before running it.
+For a fresh dev deployment, the targeted bootstrap plan may create the spoke resource group, ACR, and the AKS control-plane, AKS kubelet, and management-VM user-assigned identities as prerequisites. It must not create VNets, the AKS cluster, or the management VM; a plan-scope check fails the job if unexpected resources or deletes appear. An existing Owner must seed the bootstrap app's initial permissions. The following Cloud Shell Bash example creates the app, service principal, and dev-bootstrap federated credential. It then grants temporary subscription-level `Contributor` and `User Access Administrator` plus state-storage access so the first targeted plan can create its prerequisites and role assignments. Protect the `dev-bootstrap` GitHub Environment with required reviewers before running it.
 
 ```bash
 subscription_id="aa61b080-74f9-41ed-a75f-8e60a60ccae4"
@@ -85,7 +85,7 @@ printf 'BOOTSTRAP_ARM_CLIENT_ID=%s\nBOOTSTRAP_ARM_TENANT_ID=%s\nBOOTSTRAP_ARM_SU
   "$subscription_id"
 ```
 
-Add those three printed values as variables in GitHub Environment `dev-bootstrap`. The repository-level `TF_BACKEND_*` variables can be reused. Run **Actions → Terraform RBAC Bootstrap**, select `dev`, enter `BOOTSTRAP`, and review the targeted plan before the protected apply job.
+Add those three printed values as variables in GitHub Environment `dev-bootstrap`. The repository-level `TF_BACKEND_*` variables can be reused. Run **Actions → Terraform RBAC Bootstrap**, select `dev`, enter `BOOTSTRAP`, and review the targeted plan before the protected apply job. The bootstrap apply creates only the two constrained deployment role grants and their listed prerequisites; the regular Apply workflow provisions the network, AKS cluster, and management VM.
 
 After the first bootstrap succeeds, reduce the bootstrap identity's scope: grant it `Reader` and `User Access Administrator` on `rg-platform-dev`, then remove its subscription-level `Contributor` and `User Access Administrator` assignments. Keep `Storage Blob Data Contributor` on the state storage account. This leaves it able to read state and manage the delegated RBAC grants within dev for future bootstrap runs. Repeat with environment-specific scopes and subjects when adding qa, uat, or prod. An Owner or User Access Administrator must perform this initial authorization; Terraform cannot create the permission that authorizes its own first role assignment.
 

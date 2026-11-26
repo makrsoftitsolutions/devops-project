@@ -22,6 +22,12 @@ resource "azurerm_kubernetes_cluster" "this" {
     identity_ids = [var.identity_id]
   }
 
+  kubelet_identity {
+    client_id                 = var.kubelet_identity_client_id
+    object_id                 = var.kubelet_identity_object_id
+    user_assigned_identity_id = var.kubelet_identity_id
+  }
+
   dynamic "azure_active_directory_role_based_access_control" {
     for_each = length(var.admin_group_object_ids) > 0 ? [1] : []
     content {

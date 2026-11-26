@@ -26,6 +26,18 @@ variable "identity_id" {
   type = string
 }
 
+variable "kubelet_identity_id" {
+  type = string
+}
+
+variable "kubelet_identity_client_id" {
+  type = string
+}
+
+variable "kubelet_identity_object_id" {
+  type = string
+}
+
 variable "system_node_count" {
   type    = number
   default = 1

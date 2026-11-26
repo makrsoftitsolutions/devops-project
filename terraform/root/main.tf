@@ -56,20 +56,21 @@ locals {
   aks_dns_prefix = "dns-${var.environment}-platform"
 
   role_definition_ids = {
-    acr_pull                 = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
-    acr_push                 = "8311e382-0749-4cb8-b61a-304f252e45ec"
-    network_contributor      = "4d97b98b-1d4f-4787-a291-c67834d212e7"
-    resource_reader          = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
-    aks_cluster_user         = "4abbcc35-e782-43d8-92c5-2d3f1bd2253f"
-    aks_rbac_reader          = "7f6c6a51-bcf8-42ba-9220-52d62157d7db"
-    aks_rbac_writer          = "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb"
-    aks_rbac_cluster_admin   = "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b"
-    storage_blob_reader      = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
-    storage_blob_contributor = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
-    event_hubs_receiver      = "a638d3c7-ab3a-418d-83e6-5f17a39d4fde"
-    event_hubs_sender        = "2b629674-e913-4c01-ae53-ef4638d8f975"
-    service_bus_receiver     = "4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0"
-    service_bus_sender       = "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39"
+    acr_pull                  = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+    acr_push                  = "8311e382-0749-4cb8-b61a-304f252e45ec"
+    network_contributor       = "4d97b98b-1d4f-4787-a291-c67834d212e7"
+    managed_identity_operator = "f1a07417-d97a-45cb-824c-7a7467783830"
+    resource_reader           = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
+    aks_cluster_user          = "4abbcc35-e782-43d8-92c5-2d3f1bd2253f"
+    aks_rbac_reader           = "7f6c6a51-bcf8-42ba-9220-52d62157d7db"
+    aks_rbac_writer           = "a7ffa36f-339b-4b5c-8bdf-e2c188b2c0eb"
+    aks_rbac_cluster_admin    = "b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b"
+    storage_blob_reader       = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
+    storage_blob_contributor  = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+    event_hubs_receiver       = "a638d3c7-ab3a-418d-83e6-5f17a39d4fde"
+    event_hubs_sender         = "2b629674-e913-4c01-ae53-ef4638d8f975"
+    service_bus_receiver      = "4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0"
+    service_bus_sender        = "69a216fc-b8fb-44d8-bc22-1f3c2cd27a39"
   }
 
   service_role_name_to_id = {
@@ -91,7 +92,7 @@ locals {
   acr_delegated_role_pairs = concat(
     var.enable_aks && var.enable_aks_acr_pull ? [{
       role_definition_id = local.role_definition_ids.acr_pull
-      principal_id       = try(module.aks[0].kubelet_identity_object_id, "")
+      principal_id       = try(module.aks_kubelet_identity[0].principal_id, "")
     }] : [],
     var.enable_acr_push ? [{
       role_definition_id = local.role_definition_ids.acr_push
@@ -121,19 +122,24 @@ locals {
   )
 
   deployment_delegated_role_pairs = concat(
-    var.enable_aks ? [{
-      role_definition_id = local.role_definition_ids.network_contributor
-      principal_id       = try(module.aks_identity[0].principal_id, "")
-    }] : [],
+    var.enable_aks ? [
+      {
+        role_definition_id = local.role_definition_ids.network_contributor
+        principal_id       = try(module.aks_identity[0].principal_id, "")
+        }, {
+        role_definition_id = local.role_definition_ids.managed_identity_operator
+        principal_id       = try(module.aks_identity[0].principal_id, "")
+      }
+    ] : [],
     var.enable_management_vm ? concat(
       [{
         role_definition_id = local.role_definition_ids.resource_reader
-        principal_id       = try(module.management_vm[0].principal_id, "")
+        principal_id       = try(module.management_vm_identity[0].principal_id, "")
       }],
       var.enable_aks ? [
         {
           role_definition_id = local.role_definition_ids.aks_cluster_user
-          principal_id       = try(module.management_vm[0].principal_id, "")
+          principal_id       = try(module.management_vm_identity[0].principal_id, "")
         },
         {
           role_definition_id = lookup({
@@ -141,7 +147,7 @@ locals {
             "Azure Kubernetes Service RBAC Writer"        = local.role_definition_ids.aks_rbac_writer
             "Azure Kubernetes Service RBAC Cluster Admin" = local.role_definition_ids.aks_rbac_cluster_admin
           }, var.management_vm_aks_rbac_role, "")
-          principal_id = try(module.management_vm[0].principal_id, "")
+          principal_id = try(module.management_vm_identity[0].principal_id, "")
         }
       ] : []
     ) : [],
@@ -373,10 +379,12 @@ module "management_vm" {
 
   subnet_id = module.spoke_network.subnet_ids["snet-management"]
 
-  admin_username       = var.management_admin_username
-  admin_ssh_public_key = var.management_admin_ssh_public_key
-  vm_size              = var.management_vm_size
-  zone                 = var.management_vm_zone
+  admin_username                      = var.management_admin_username
+  admin_ssh_public_key                = var.management_admin_ssh_public_key
+  vm_size                             = var.management_vm_size
+  zone                                = var.management_vm_zone
+  user_assigned_identity_id           = module.management_vm_identity[0].id
+  user_assigned_identity_principal_id = module.management_vm_identity[0].principal_id
 
   network_security_group_name = local.management_vm_nsg_name
   bastion_subnet_cidr         = var.hub_subnets["AzureBastionSubnet"].address_prefixes[0]
@@ -421,7 +429,7 @@ module "bastion" {
   tags                = local.common_tags
 }
 
-# Stage 4: create AKS identity and subnet authorization before the cluster.
+# Stage 4: create AKS identities and authorization before the cluster.
 module "acr" {
   count                         = var.enable_acr ? 1 : 0
   source                        = "../modules/acr"
@@ -442,6 +450,26 @@ module "aks_identity" {
   tags                = local.common_tags
 }
 
+# These user-assigned identities exist before their compute resources so the
+# bootstrap can establish narrowly scoped role assignments without creating AKS or the VM.
+module "aks_kubelet_identity" {
+  count               = var.enable_aks ? 1 : 0
+  source              = "../modules/identity"
+  name                = "id-${local.aks_name}-kubelet"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.spoke.name
+  tags                = local.common_tags
+}
+
+module "management_vm_identity" {
+  count               = var.enable_management_vm ? 1 : 0
+  source              = "../modules/identity"
+  name                = "id-${local.management_vm_name}"
+  location            = var.location
+  resource_group_name = azurerm_resource_group.spoke.name
+  tags                = local.common_tags
+}
+
 module "rbac_aks_network" {
   count  = var.enable_aks ? 1 : 0
   source = "../modules/rbac"
@@ -450,6 +478,11 @@ module "rbac_aks_network" {
     aks_network_contributor = {
       scope                = module.spoke_network.subnet_ids["snet-aks"]
       role_definition_name = "Network Contributor"
+      principal_id         = module.aks_identity[0].principal_id
+    }
+    aks_kubelet_identity_operator = {
+      scope                = module.aks_kubelet_identity[0].id
+      role_definition_name = "Managed Identity Operator"
       principal_id         = module.aks_identity[0].principal_id
     }
   }
@@ -504,6 +537,9 @@ module "aks" {
   kubernetes_version         = var.aks_kubernetes_version
   subnet_id                  = module.spoke_network.subnet_ids["snet-aks"]
   identity_id                = module.aks_identity[0].id
+  kubelet_identity_id        = module.aks_kubelet_identity[0].id
+  kubelet_identity_client_id = module.aks_kubelet_identity[0].client_id
+  kubelet_identity_object_id = module.aks_kubelet_identity[0].principal_id
   system_node_count          = var.aks_system_node_count
   system_vm_size             = var.aks_system_vm_size
   enable_user_node_pool      = var.enable_aks_user_node_pool
@@ -532,7 +568,7 @@ module "rbac_aks_acr_pull" {
     aks_acr_pull = {
       scope                = module.acr[0].id
       role_definition_name = "AcrPull"
-      principal_id         = module.aks[0].kubelet_identity_object_id
+      principal_id         = module.aks_kubelet_identity[0].principal_id
     }
   }
 
@@ -581,19 +617,19 @@ module "rbac_management_vm" {
       management_vm_resource_reader = {
         scope                = azurerm_resource_group.spoke.id
         role_definition_name = "Reader"
-        principal_id         = module.management_vm[0].principal_id
+        principal_id         = module.management_vm_identity[0].principal_id
       }
     },
     var.enable_aks ? {
       management_vm_aks_cluster_user = {
         scope                = module.aks[0].id
         role_definition_name = "Azure Kubernetes Service Cluster User Role"
-        principal_id         = module.management_vm[0].principal_id
+        principal_id         = module.management_vm_identity[0].principal_id
       }
       management_vm_aks_rbac = {
         scope                = module.aks[0].id
         role_definition_name = var.management_vm_aks_rbac_role
-        principal_id         = module.management_vm[0].principal_id
+        principal_id         = module.management_vm_identity[0].principal_id
       }
     } : {}
   )
@@ -1157,5 +1193,5 @@ output "management_vm_private_ip" {
 }
 
 output "management_vm_principal_id" {
-  value = var.enable_management_vm ? module.management_vm[0].principal_id : null
+  value = var.enable_management_vm ? module.management_vm_identity[0].principal_id : null
 }

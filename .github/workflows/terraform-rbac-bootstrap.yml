@@ -99,7 +99,7 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Plan the two delegation grants
+      - name: Plan bootstrap grants and prerequisites
         run: >-
           terraform plan -input=false
           -var-file="../environments/${TARGET_ENVIRONMENT}/terraform.tfvars"
@@ -109,6 +109,35 @@ jobs:
 
       - name: Show bootstrap plan
         run: terraform show -no-color rbac-bootstrap.tfplan
+
+      - name: Verify bootstrap plan scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform show -json rbac-bootstrap.tfplan > rbac-bootstrap-plan.json
+          if ! jq -e '
+            def allowed_addresses: [
+              "azurerm_resource_group.spoke",
+              "module.acr[0].azurerm_container_registry.this",
+              "module.aks_identity[0].azurerm_user_assigned_identity.this",
+              "module.aks_kubelet_identity[0].azurerm_user_assigned_identity.this",
+              "module.management_vm_identity[0].azurerm_user_assigned_identity.this",
+              "module.rbac_deployment_acr_admin[0].azurerm_role_assignment.this[\"deployment_acr_rbac_admin\"]",
+              "module.rbac_deployment_management[0].azurerm_role_assignment.this[\"deployment_manage_vm_roles\"]"
+            ];
+            [
+              .resource_changes[]?
+              | select(.mode == "managed")
+              | select(.change.actions != ["no-op"])
+              | select(
+                  (.address as $address | (allowed_addresses | index($address)) == null)
+                  or (.change.actions | index("delete") != null)
+                )
+            ] | length == 0
+          ' rbac-bootstrap-plan.json > /dev/null; then
+            echo "Bootstrap plan contains unexpected resource changes or deletes; review the plan and stop before apply."
+            exit 1
+          fi
 
       - name: Upload bootstrap plan
         uses: actions/upload-artifact@v4
