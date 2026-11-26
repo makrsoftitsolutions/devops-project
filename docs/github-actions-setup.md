@@ -4,13 +4,13 @@ Terraform workflows use GitHub OIDC. Do not add a client secret. Configure each 
 
 ## Configure the repository
 
-1. In GitHub, open **Settings → Environments**. Create `dev`, `dev-bootstrap`, `dev-destroy`, and `dev-plan`. Require reviewers on bootstrap, destroy, and dev-plan. Currently only `dev` has Terraform configuration; create matching `qa`, `uat`, or `prod` files and environments before selecting those options.
+1. In GitHub, open **Settings → Environments**. Create `dev`, `dev-bootstrap`, and `dev-destroy`. Require reviewers on bootstrap and destroy. Currently only `dev` has Terraform configuration; create matching `qa`, `uat`, or `prod` files and environments before selecting those options.
 2. Under **Settings → Secrets and variables → Actions → Variables**, set repository-level `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` for the shared app used by dev, bootstrap, destroy, and the ACR workflow. Set repository-level `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, and `TF_BACKEND_CONTAINER` for the dev state backend.
-3. Configure `dev-plan` with environment-level `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` for a separate read-only app, plus `ARM_IDENTITY_SCOPE=readonly-plan`. This environment-level identity overrides the privileged repository-level `ARM_*` values. Keep `dev-plan` protected with reviewer approval because Terraform state can contain sensitive data. The other workflows inherit repository ARM variables unless an environment-specific override is configured. If PostgreSQL is enabled, add `POSTGRES_ADMIN_PASSWORD` as a secret for that environment and its protected bootstrap/destroy environments.
-4. In Microsoft Entra admin center, add federated credentials in the appropriate app registrations: **App registrations → [app] → Certificates & secrets → Federated credentials → Add credential → GitHub Actions deploying Azure**. The shared ARM app needs the `dev`, `dev-bootstrap`, and `dev-destroy` subjects; the separate read-only plan app needs `environment:dev-plan`. Match issuer, subject, and audience exactly to **Federated token details** in the workflow log. For this repository, GitHub emits ID-qualified subjects; the dev-plan subject is `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:dev-plan`. Use issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. Do not create client secrets or add `main`/`pull_request` subjects to the privileged app.
+3. If PostgreSQL is enabled, add `POSTGRES_ADMIN_PASSWORD` as a secret to the selected environment and its protected bootstrap/destroy environments.
+4. In Microsoft Entra admin center, add federated credentials in the appropriate app registrations: **App registrations → [app] → Certificates & secrets → Federated credentials → Add credential → GitHub Actions deploying Azure**. The shared ARM app needs the `dev`, `dev-bootstrap`, and `dev-destroy` subjects. Match issuer, subject, and audience exactly to **Federated token details** in the workflow log. Use issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. Do not create client secrets or add pull-request subjects to the privileged app.
 5. Assign the Azure roles listed below to each app's service principal. For every app, use its application/client ID in GitHub variables and its service principal object ID where Terraform expects an object ID.
 
-After setup, open **Actions** and select the target environment in Plan, Apply, RBAC Bootstrap, or Destroy. Inspect plans and approve the matching protected environment. Bootstrap uses `<env>-bootstrap`; destroy uses `<env>-destroy`.
+After setup, open **Actions** and manually run Plan, Apply, RBAC Bootstrap, or Destroy for the target environment. Inspect plans and approve the matching protected environment. Bootstrap uses `<env>-bootstrap`; destroy uses `<env>-destroy`.
 
 ## Deployment identity and GitHub Environments
 
@@ -21,7 +21,6 @@ The current setup uses one repository-level ARM app for normal Plan/Apply, RBAC 
 | `<env>` | Repository-level `ARM_*` (shared app) | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>` |
 | `<env>-bootstrap` | Repository-level `ARM_*` (shared app) | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>-bootstrap` |
 | `<env>-destroy` | Repository-level `ARM_*` (shared app) | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>-destroy` |
-| `dev-plan` | Environment-level `ARM_*` and `ARM_IDENTITY_SCOPE=readonly-plan` (read-only app) | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:dev-plan` |
 
 This shared identity is a deliberate exception to least privilege. The app currently has `Contributor` and `User Access Administrator` at subscription scope, plus state access. Every workflow that can obtain a token for any federated subject on this app receives those same Azure permissions; GitHub Environment approvals do not restrict Azure roles after authentication. Prefer separate deployment, bootstrap, and destroy app registrations for production.
 
@@ -30,13 +29,8 @@ Require reviewer approval and restrict deployment branches on each environment; 
 | Identity | Required Azure roles |
 | --- | --- |
 | Shared ARM identity (current dev setup) | `Contributor` and `User Access Administrator` at subscription scope, plus `Storage Blob Data Contributor` on the state container. These permissions are shared by Plan, Apply, Bootstrap, Destroy, and ACR workflows. |
-| PR plan identity | `Reader` on the subscription and `Storage Blob Data Contributor` on the state container; no role assignment write permission. |
 
 The shared ARM identity's `User Access Administrator` grant is broader than the conditional role-assignment delegation managed by Terraform. Anyone able to run a workflow with a matching OIDC subject can exercise the app's full subscription-level permissions. Optional app data roles use `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments` with principal object IDs in tfvars.
-
-## Pull-request plan identity
-
-Use a separate, read-only plan app. Set its `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` as environment variables in `dev-plan`, and set `ARM_IDENTITY_SCOPE=readonly-plan` there. Give the app an OIDC federated credential with subject `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:dev-plan`, Azure `Reader`, and `Storage Blob Data Contributor` on the state container (Terraform needs blob leases to lock state during a plan). Do not grant it role-assignment write permission. The workflow fails before Azure login if the environment marker is absent, preventing fallback to the privileged repository ARM app. Repository-level `TF_BACKEND_*` variables provide the dev backend. The PR plan job skips fork-originated pull requests because remote state can contain sensitive values.
 
 ## One-time RBAC bootstrap
 

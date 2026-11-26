@@ -1,10 +1,6 @@
 name: Terraform Plan
 
 on:
-  pull_request:
-    paths:
-      - "terraform/**"
-      - ".github/workflows/terraform-*.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -27,83 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  plan-pull-request:
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: ubuntu-latest
-    environment: dev-plan
-
-    env:
-      TARGET_ENVIRONMENT: dev
-      ARM_IDENTITY_SCOPE: ${{ vars.ARM_IDENTITY_SCOPE }}
-      ARM_USE_OIDC: "true"
-      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      TF_IN_AUTOMATION: "true"
-      TF_INPUT: "false"
-
-    defaults:
-      run:
-        working-directory: terraform/root
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Verify dev configuration
-        shell: bash
-        run: |
-          if [[ "$ARM_IDENTITY_SCOPE" != "readonly-plan" ]]; then
-            echo "Configure ARM_IDENTITY_SCOPE=readonly-plan in the dev-plan GitHub Environment."
-            exit 1
-          fi
-          config="../environments/dev/terraform.tfvars"
-          test -f "$config" || { echo "Missing $config"; exit 1; }
-          grep -Eq '^environment[[:space:]]*=[[:space:]]*"dev"[[:space:]]*$' "$config" || {
-            echo "The environment value in $config must be dev."
-            exit 1
-          }
-          config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
-          if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
-            echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
-            exit 1
-          fi
-
-      - name: Azure Login using OIDC
-        uses: azure/login@v2
-        with:
-          auth-type: SERVICE_PRINCIPAL
-          client-id: ${{ vars.ARM_CLIENT_ID }}
-          tenant-id: ${{ vars.ARM_TENANT_ID }}
-          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
-
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
-        working-directory: terraform
-
-      - name: Terraform Init
-        run: |
-          terraform init -reconfigure \
-            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RESOURCE_GROUP }}" \
-            -backend-config="storage_account_name=${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
-            -backend-config="key=dev.terraform.tfstate" \
-            -backend-config="use_azuread_auth=true" \
-            -backend-config="use_oidc=true"
-
-      - name: Terraform Validate
-        run: terraform validate
-
-      - name: Terraform Plan
-        run: terraform plan -no-color -input=false -var-file="../environments/dev/terraform.tfvars"
-
-  plan-manual:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+  plan:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
 

@@ -1,9 +1,0 @@
-{
-  "name": "github-devops-project-pr",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:makrsoftitsolutions@348376686/devops-project@1468388333:pull_request",
-  "description": "GitHub PR OIDC authentication",
-  "audiences": [
-    "api://AzureADTokenExchange"
-  ]
-}

@@ -33,14 +33,14 @@ Run Plan, Apply, and Destroy through the protected GitHub Actions workflows. The
 
 ## GitHub Actions
 
-Manual Plan, Apply, Bootstrap, and Destroy workflows use protected GitHub Environments. They currently inherit one repository-level `ARM_*` identity; PR plans use a separate read-only identity and skip fork-originated PRs.
+Plan, Apply, Bootstrap, and Destroy workflows run only through manual dispatch and use protected GitHub Environments. They inherit the repository-level `ARM_*` identity unless an environment-specific override is configured.
 
 Configure these repository-level Actions variables:
 
 - `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
 - `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, `TF_BACKEND_CONTAINER`
 
-The common ARM app currently has subscription-level `Contributor` and `User Access Administrator`; those permissions are available to every workflow subject federated to that app, not just Bootstrap and Destroy. PR Plan uses a separate read-only app configured as `ARM_*` variables in protected GitHub Environment `dev-plan`; it must not fall back to the repository-level privileged app. The backend key is generated from the selected environment; `TF_BACKEND_KEY` is not required. Dev keeps ACR public so GitHub-hosted runners can connect; private ACR needs Premium SKU and a VNet-connected self-hosted runner.
+The common ARM app currently has subscription-level `Contributor` and `User Access Administrator`; those permissions are available to every manually dispatched workflow subject federated to that app, not just Bootstrap and Destroy. The backend key is generated from the selected environment; `TF_BACKEND_KEY` is not required. Dev keeps ACR public so GitHub-hosted runners can connect; private ACR needs Premium SKU and a VNet-connected self-hosted runner.
 
 ## NGINX image workflow
 
