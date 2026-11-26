@@ -20,7 +20,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: terraform-${{ inputs.environment || 'dev' }}
@@ -44,6 +43,9 @@ jobs:
     needs: validate-confirmation
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment || 'dev' }}
+    permissions:
+      contents: read
+      id-token: write
 
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
@@ -136,6 +138,9 @@ jobs:
     needs: plan-destroy
     runs-on: ubuntu-latest
     environment: ${{ format('{0}-destroy', inputs.environment || 'dev') }}
+    permissions:
+      contents: read
+      id-token: write
 
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}

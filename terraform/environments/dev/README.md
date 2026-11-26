@@ -69,7 +69,7 @@ If creating a new environment, inspect the plan for the assignments and scopes b
 
 The detailed GitHub Environment variables, OIDC subjects, Azure permissions, and workflow sequence are in the [GitHub Actions setup guide](../../../docs/github-actions-setup.md). `dev-bootstrap` is for constrained RBAC setup; `dev-destroy` is restricted to teardown. Both should require reviewer approval.
 
-The pull-request Plan workflow uses separate repository variables `PLAN_ARM_CLIENT_ID`, `PLAN_ARM_TENANT_ID`, and `PLAN_ARM_SUBSCRIPTION_ID`, plus a `pull_request` federated credential for its read-only identity.
+The pull-request Plan workflow uses a separate read-only app configured through environment-level `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` in protected GitHub Environment `dev-plan`. It also requires `ARM_IDENTITY_SCOPE=readonly-plan`; this prevents it from falling back to the privileged repository-level ARM app. Its federated credential subject is the ID-qualified `environment:dev-plan` subject.
 
 The common repository-level `ARM_*` variables are inherited by the `dev`, `dev-bootstrap`, and `dev-destroy` workflows. These protected environments provide approval gates, not separate Azure identities. The current ARM app has subscription-level `Contributor` and `User Access Administrator`; all its federated subjects share that access.
 
