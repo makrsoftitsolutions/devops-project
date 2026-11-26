@@ -17,9 +17,9 @@ The values in `terraform.tfvars` enable:
 | AKS network permission | Enabled | AKS identity has `Network Contributor` on the AKS subnet |
 | AKS image pull permission | Enabled | `AcrPull` is granted to the AKS kubelet identity on ACR |
 | Azure Firewall | Enabled | Basic SKU; dedicated firewall and management subnets and public IPs |
-| Application Gateway | Enabled | WAF v2, public HTTP listener; backend FQDN is currently unset, so configure an application backend before serving traffic |
+| Application Gateway | Enabled | WAF v2, public HTTP listener; `application_gateway_backend_fqdn` is unset until the AKS ingress endpoint is deployed |
 | Log Analytics | Enabled | `enable_log_analytics = true`; connected to AKS monitoring |
-| Key Vault | Enabled | `enable_key_vault = true`; RBAC authorization is enabled |
+| Key Vault | Enabled | RBAC authorization is enabled; public access is disabled and access uses a private endpoint with private DNS |
 
 Change these options in `terraform.tfvars` to enable or disable optional resources. `enable_aks_acr_pull` independently controls the AKS kubelet `AcrPull` assignment, subject to both AKS and ACR being enabled.
 
@@ -38,6 +38,12 @@ The deployment identity's `Role Based Access Control Administrator` assignment i
 The GitHub deployment service principal was checked and currently has `Contributor` at subscription scope, `Storage Blob Data Contributor` on the Terraform state storage account, and `Role Based Access Control Administrator` on the ACR. Subscription-level `Contributor` supplies the Azure resource write permissions needed to create the Firewall and Application Gateway. Terraform does not create that subscription-level `Contributor` grant; it must remain assigned through the organization's identity governance process.
 
 The Application Gateway subnet is dedicated and currently has no NSG or route-table association. The Firewall is provisioned in the hub but no workload UDR currently directs traffic through it; adding the Firewall does not by itself inspect or filter workload egress.
+
+`enable_workload_firewall_default_route` defaults to `false`. Enable it only after the firewall policy has allow rules for required workload and AKS egress. When enabled, Terraform routes the workloads subnet's `0.0.0.0/0` traffic to the Firewall private IP. The AKS subnet is not associated with this route table.
+
+Key Vault uses `privatelink.vaultcore.azure.net`, linked to the spoke VNet, and the private endpoint is placed in `snet-private`. The management VM can resolve the private vault address through the spoke link. Any other client network that needs vault access must also have a suitable DNS and network path.
+
+The AKS ingress endpoint has not been deployed yet, so `application_gateway_backend_fqdn` remains `null`. Set it to the ingress FQDN after deployment before directing application traffic through the gateway.
 
 ### One-time Terraform bootstrap
 

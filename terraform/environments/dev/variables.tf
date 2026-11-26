@@ -74,6 +74,12 @@ variable "enable_firewall" {
   default = false
 }
 
+variable "enable_workload_firewall_default_route" {
+  description = "Route workload-subnet internet egress through Azure Firewall. Enable only after configuring firewall allow rules."
+  type        = bool
+  default     = false
+}
+
 variable "enable_bastion" {
   type    = bool
   default = false
@@ -82,6 +88,12 @@ variable "enable_bastion" {
 variable "enable_application_gateway" {
   type    = bool
   default = false
+}
+
+variable "application_gateway_backend_fqdn" {
+  description = "FQDN of the application backend, such as an AKS ingress endpoint."
+  type        = string
+  default     = null
 }
 
 variable "enable_acr" {

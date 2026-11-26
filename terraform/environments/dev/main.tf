@@ -7,6 +7,25 @@ locals {
 
   hub_rg_name   = "rg-network-${var.environment}"
   spoke_rg_name = "rg-platform-${var.environment}"
+
+  workload_routes = var.enable_workload_firewall_default_route ? {
+    default_to_firewall = {
+      address_prefix         = "0.0.0.0/0"
+      next_hop_type          = "VirtualAppliance"
+      next_hop_in_ip_address = module.firewall[0].private_ip
+    }
+  } : {}
+}
+
+resource "terraform_data" "firewall_route_guard" {
+  input = var.enable_workload_firewall_default_route
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_workload_firewall_default_route || var.enable_firewall
+      error_message = "Enable Azure Firewall before routing workload traffic through it."
+    }
+  }
 }
 
 resource "azurerm_resource_group" "hub" {
@@ -62,7 +81,7 @@ module "workloads_route_table" {
   name                = "rt-workloads-${var.environment}"
   location            = var.location
   resource_group_name = azurerm_resource_group.spoke.name
-  routes              = {}
+  routes              = local.workload_routes
   tags                = local.common_tags
 }
 
@@ -164,7 +183,7 @@ module "application_gateway" {
   location            = var.location
   resource_group_name = azurerm_resource_group.spoke.name
   subnet_id           = module.spoke_network.subnet_ids["snet-appgw"]
-  backend_fqdn        = null
+  backend_fqdn        = var.application_gateway_backend_fqdn
   tags                = local.common_tags
 }
 
@@ -257,6 +276,39 @@ module "key_vault" {
   tags                = local.common_tags
 }
 
+resource "azurerm_private_dns_zone" "key_vault" {
+  count               = var.enable_key_vault ? 1 : 0
+  name                = "privatelink.vaultcore.azure.net"
+  resource_group_name = azurerm_resource_group.spoke.name
+  tags                = local.common_tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "key_vault" {
+  count                 = var.enable_key_vault ? 1 : 0
+  name                  = "link-key-vault-${var.environment}-spoke"
+  resource_group_name   = azurerm_resource_group.spoke.name
+  private_dns_zone_name = azurerm_private_dns_zone.key_vault[0].name
+  virtual_network_id    = module.spoke_network.id
+  registration_enabled  = false
+  tags                  = local.common_tags
+}
+
+module "key_vault_private_endpoint" {
+  count  = var.enable_key_vault ? 1 : 0
+  source = "../../modules/private-endpoint"
+
+  name                           = "pe-${var.project}-${var.environment}-kv"
+  location                       = var.location
+  resource_group_name            = azurerm_resource_group.spoke.name
+  subnet_id                      = module.spoke_network.subnet_ids["snet-private"]
+  private_connection_resource_id = module.key_vault[0].id
+  subresource_names              = ["vault"]
+  private_dns_zone_ids           = [azurerm_private_dns_zone.key_vault[0].id]
+  tags                           = local.common_tags
+
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.key_vault]
+}
+
 output "subscription_id" {
   value = data.azurerm_client_config.current.subscription_id
 }
@@ -303,6 +355,10 @@ output "aks_name" {
 
 output "key_vault_uri" {
   value = var.enable_key_vault ? module.key_vault[0].vault_uri : null
+}
+
+output "key_vault_private_endpoint_ip" {
+  value = var.enable_key_vault ? module.key_vault_private_endpoint[0].private_ip_addresses : null
 }
 
 output "management_vm_name" {
