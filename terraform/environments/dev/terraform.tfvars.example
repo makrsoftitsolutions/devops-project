@@ -58,7 +58,7 @@ enable_acr_push             = false
 deployment_principal_object_id = "00000000-0000-0000-0000-000000000000"
 
 acr_name       = null # Defaults to <project><environment>acr001; override if globally unavailable.
-key_vault_name = null # Defaults to kv-<project>-<environment>-001; override if globally unavailable.
+key_vault_name = null # Defaults to kv-<project>-<environment>-001; override with a unique purge-safe name.
 aks_name       = null # Defaults to aks-<environment>-platform.
 postgres_flexible_server_name = null # PostgreSQL server name; globally unique.
 storage_account_name = null # Defaults to <project><environment>st001; globally unique.

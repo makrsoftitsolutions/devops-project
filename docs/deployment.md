@@ -16,7 +16,7 @@ Azure Monitor uses an Azure Monitor Private Link Scope with `PrivateOnly` ingest
 
 ## Role assignments
 
-Terraform creates role assignments through the shared RBAC module. The deployment identity can manage only the exact delegated role/principal pairs represented in Terraform. It cannot grant itself its initial `Microsoft.Authorization/roleAssignments/write` permission. The protected **Terraform RBAC Bootstrap** workflow therefore uses a separate identity that an existing Azure Owner or User Access Administrator has authorized once. No Terraform-only path can bypass this initial Azure authorization.
+Terraform creates role assignments through the shared RBAC module. The current dev setup uses a repository-level ARM app with subscription-level `Contributor` and `User Access Administrator` for Plan, Apply, Bootstrap, Destroy, and ACR workflows. This lets the bootstrap workflow create role assignments, but also gives normal workflows the same broad permissions. GitHub environment approvals do not isolate Azure access for a shared app; use separate identities for least privilege, especially before production.
 
 ## Quota and service limits
 

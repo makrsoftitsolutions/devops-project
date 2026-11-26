@@ -5,35 +5,33 @@ Terraform workflows use GitHub OIDC. Do not add a client secret. Configure each 
 ## Configure the repository
 
 1. In GitHub, open **Settings → Environments**. For each configured Terraform environment `<env>`, create `<env>`, `<env>-bootstrap`, and `<env>-destroy`. Currently only `dev` has Terraform configuration; create the matching `qa`, `uat`, or `prod` files before selecting those options. Add required reviewers and restrict deployment branches; limit bootstrap/destroy approvals to administrators.
-2. Under **Settings → Secrets and variables → Actions → Variables**, add repository variables `PLAN_ARM_CLIENT_ID`, `PLAN_ARM_TENANT_ID`, `PLAN_ARM_SUBSCRIPTION_ID`, and `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, `TF_BACKEND_CONTAINER` for the dev state backend. Set the three `PLAN_ARM_*` values to the separate PR-plan app; the backend values point at the same dev backend used by Terraform.
-3. Add each environment's identity variables: `<env>` uses `ARM_*`; `<env>-bootstrap` uses `BOOTSTRAP_ARM_*`; and `<env>-destroy` uses `DESTROY_ARM_*`. Repository-level `TF_BACKEND_*` variables can be reused by all workflows; environment-level values override repository values when present. If PostgreSQL is enabled, add `POSTGRES_ADMIN_PASSWORD` as an environment secret for that environment and its protected bootstrap/destroy environments.
-4. In Microsoft Entra admin center, add a federated credential to each app registration: **App registrations → [app] → Certificates & secrets → Federated credentials → Add credential → GitHub Actions deploying Azure**. Set the subject to `repo:<OWNER>/<REPOSITORY>:environment:<env>`, `repo:<OWNER>/<REPOSITORY>:environment:<env>-bootstrap`, or `repo:<OWNER>/<REPOSITORY>:environment:<env>-destroy`, matching the GitHub Environment. Use `repo:<OWNER>/<REPOSITORY>:pull_request` for the PR plan identity. Set audience to `api://AzureADTokenExchange`. Do not create client secrets.
+2. Under **Settings → Secrets and variables → Actions → Variables**, set repository-level `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` for the shared app used by dev, bootstrap, destroy, and the ACR workflow. Keep `PLAN_ARM_CLIENT_ID`, `PLAN_ARM_TENANT_ID`, and `PLAN_ARM_SUBSCRIPTION_ID` on the separate read-only PR-plan app. Set repository-level `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, and `TF_BACKEND_CONTAINER` for the dev state backend.
+3. Keep `<env>`, `<env>-bootstrap`, and `<env>-destroy` as protected GitHub Environments for approvals. The current workflows inherit the common repository-level `ARM_*` values; set environment-level `TF_BACKEND_*` only when a different backend is needed. If PostgreSQL is enabled, add `POSTGRES_ADMIN_PASSWORD` as a secret for that environment and its protected bootstrap/destroy environments.
+4. In Microsoft Entra admin center, add a federated credential to the shared ARM app registration for each protected workflow environment: **App registrations → [app] → Certificates & secrets → Federated credentials → Add credential → GitHub Actions deploying Azure**. Match issuer, subject, and audience exactly to the workflow's **Federated token details** log. The current repo app needs the `dev`, `dev-bootstrap`, and `dev-destroy` subjects. For this repository, GitHub emits ID-qualified subjects; the dev-destroy subject is `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:dev-destroy` (not `repo:makrsoftitsolutions/devops-project:environment:dev-destroy`). Use issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. Do not create client secrets. The shared ARM app also currently has `main` and `pull_request` credentials; remove those if no workflow needs them because every accepted subject inherits the app's subscription-level privileges.
 5. Assign the Azure roles listed below to each app's service principal. For every app, use its application/client ID in GitHub variables and its service principal object ID where Terraform expects an object ID.
 
 After setup, open **Actions** and select the target environment in Plan, Apply, RBAC Bootstrap, or Destroy. Inspect plans and approve the matching protected environment. Bootstrap uses `<env>-bootstrap`; destroy uses `<env>-destroy`.
 
 ## Deployment identity and GitHub Environments
 
-Create a deployment app/service principal for normal Plan/Apply and ACR image pushes. `ARM_CLIENT_ID` is its application/client ID; `deployment_principal_object_id` in dev tfvars is its service principal object ID. They are different IDs. Set up GitHub Environments under **Repository Settings → Environments**:
+The current setup uses one repository-level ARM app for normal Plan/Apply, RBAC bootstrap, destroy, and ACR image pushes. `ARM_CLIENT_ID` is its application/client ID; `deployment_principal_object_id` in dev tfvars is its service principal object ID. They are different IDs.
 
 | Environment pattern | Variables | OIDC subject pattern |
 | --- | --- | --- |
-| `<env>` | `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` | `repo:<OWNER>/<REPOSITORY>:environment:<env>` |
-| `<env>-bootstrap` | `BOOTSTRAP_ARM_CLIENT_ID`, `BOOTSTRAP_ARM_TENANT_ID`, `BOOTSTRAP_ARM_SUBSCRIPTION_ID` | `repo:<OWNER>/<REPOSITORY>:environment:<env>-bootstrap` |
-| `<env>-destroy` | `DESTROY_ARM_CLIENT_ID`, `DESTROY_ARM_TENANT_ID`, `DESTROY_ARM_SUBSCRIPTION_ID` | `repo:<OWNER>/<REPOSITORY>:environment:<env>-destroy` |
+| `<env>` | Repository-level `ARM_*` | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>` |
+| `<env>-bootstrap` | Repository-level `ARM_*` | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>-bootstrap` |
+| `<env>-destroy` | Repository-level `ARM_*` | `repo:makrsoftitsolutions@348376686/devops-project@1468388333:environment:<env>-destroy` |
 
-The `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, and `TF_BACKEND_CONTAINER` values may be repository variables shared by these environments. Set environment-level values only when an environment uses a different state backend.
+This shared identity is a deliberate exception to least privilege. The app currently has `Contributor` and `User Access Administrator` at subscription scope, plus state access. Every workflow that can obtain a token for any federated subject on this app receives those same Azure permissions; GitHub Environment approvals do not restrict Azure roles after authentication. Prefer separate deployment, bootstrap, and destroy app registrations for production.
 
 Require reviewer approval and restrict deployment branches on each environment; restrict `<env>-bootstrap` and `<env>-destroy` to a small admin group. Add the secret `POSTGRES_ADMIN_PASSWORD` to each environment only if PostgreSQL is enabled. The workflows map it to Terraform as `TF_VAR_postgres_admin_password`; never store it in tfvars.
 
 | Identity | Required Azure roles |
 | --- | --- |
-| Normal `<env>` deploy identity | `Contributor` at subscription, `Storage Blob Data Contributor` on the state container. Terraform-managed conditional RBAC grants allow only the configured role/principal pairs. |
-| `<env>-bootstrap` identity | `Reader` and `User Access Administrator` on `rg-platform-<env>`, plus `Storage Blob Data Contributor` on the state container. |
-| `<env>-destroy` identity | `Contributor` and `User Access Administrator` at subscription scope, plus `Storage Blob Data Contributor` on the state container. Keep this identity protected for teardown. |
+| Shared ARM identity (current dev setup) | `Contributor` and `User Access Administrator` at subscription scope, plus `Storage Blob Data Contributor` on the state container. These permissions are shared by Plan, Apply, Bootstrap, Destroy, and ACR workflows. |
 | PR plan identity | `Reader` on the subscription and `Storage Blob Data Contributor` on the state container; no role assignment write permission. |
 
-The normal deployment identity needs `Contributor` on the subscription to create/manage resource groups and Azure resources, plus `Storage Blob Data Contributor` on the state container for state reads/writes and locking. The Terraform RBAC module delegates only the exact role/principal pairs it manages. The deployment identity also needs `AcrPush` on ACR for the image workflow; Terraform manages this assignment. Optional app data roles use `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments` with principal object IDs in tfvars.
+The shared ARM identity's `User Access Administrator` grant is broader than the conditional role-assignment delegation managed by Terraform. Anyone able to run a workflow with a matching OIDC subject can exercise the app's full subscription-level permissions. Optional app data roles use `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments` with principal object IDs in tfvars.
 
 ## Pull-request plan identity
 
@@ -41,9 +39,9 @@ Use a separate, read-only plan app. Set repository variables `PLAN_ARM_CLIENT_ID
 
 ## One-time RBAC bootstrap
 
-An identity cannot grant itself `Microsoft.Authorization/roleAssignments/write`. Use a separate app/service principal for bootstrap, with only the `<env>-bootstrap` OIDC subject. Do not add subscription-level role-assignment permissions to the normal deployment app if that app also trusts `main` or `pull_request` subjects: any workflow able to get a token for one of those subjects could use the elevated permission.
+The current shared ARM app already has subscription-level `User Access Administrator`, so the targeted bootstrap workflow can create the configured grants. This also means the normal deployment and destroy workflows have that broad permission. The separate-identity setup below is the recommended least-privilege alternative; do not use it alongside the shared repository ARM values unless you intentionally want the bootstrap environment to override them.
 
-For a fresh dev deployment, the targeted bootstrap plan may create the spoke resource group, ACR, and the AKS control-plane, AKS kubelet, and management-VM user-assigned identities as prerequisites. It must not create VNets, the AKS cluster, or the management VM; a plan-scope check fails the job if unexpected resources or deletes appear. An existing Owner must seed the bootstrap app's initial permissions. The following Cloud Shell Bash example creates the app, service principal, and dev-bootstrap federated credential. It then grants temporary subscription-level `Contributor` and `User Access Administrator` plus state-storage access so the first targeted plan can create its prerequisites and role assignments. Protect the `dev-bootstrap` GitHub Environment with required reviewers before running it.
+With the current shared app, the targeted bootstrap plan may create the spoke resource group, ACR, and the AKS control-plane, AKS kubelet, and management-VM user-assigned identities as prerequisites. It must not create VNets, the AKS cluster, or the management VM; a plan-scope check fails the job if unexpected resources or deletes appear. The Cloud Shell example below is only for switching to a separate, least-privilege bootstrap app; it is not required by the current shared-app setup. Protect the `dev-bootstrap` GitHub Environment with required reviewers.
 
 ```bash
 subscription_id="aa61b080-74f9-41ed-a75f-8e60a60ccae4"
@@ -79,19 +77,19 @@ az role assignment create \
   --role "Storage Blob Data Contributor" \
   --scope "$state_storage_scope"
 
-printf 'BOOTSTRAP_ARM_CLIENT_ID=%s\nBOOTSTRAP_ARM_TENANT_ID=%s\nBOOTSTRAP_ARM_SUBSCRIPTION_ID=%s\n' \
+printf 'ARM_CLIENT_ID=%s\nARM_TENANT_ID=%s\nARM_SUBSCRIPTION_ID=%s\n' \
   "$bootstrap_client_id" \
   "$(az account show --query tenantId -o tsv)" \
   "$subscription_id"
 ```
 
-Add those three printed values as variables in GitHub Environment `dev-bootstrap`. The repository-level `TF_BACKEND_*` variables can be reused. Run **Actions → Terraform RBAC Bootstrap**, select `dev`, enter `BOOTSTRAP`, and review the targeted plan before the protected apply job. The bootstrap apply creates only the two constrained deployment role grants and their listed prerequisites; the regular Apply workflow provisions the network, AKS cluster, and management VM.
+To use this alternative, add the printed values as environment-level `ARM_CLIENT_ID`, `ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` in `dev-bootstrap`; these override the repository variables for that job. Run **Actions → Terraform RBAC Bootstrap**, select `dev`, enter `BOOTSTRAP`, and review the targeted plan before the protected apply job. The bootstrap apply creates only the two constrained deployment role grants and their listed prerequisites; the regular Apply workflow provisions the network, AKS cluster, and management VM.
 
-After the first bootstrap succeeds, reduce the bootstrap identity's scope: grant it `Reader` and `User Access Administrator` on `rg-platform-dev`, then remove its subscription-level `Contributor` and `User Access Administrator` assignments. Keep `Storage Blob Data Contributor` on the state storage account. This leaves it able to read state and manage the delegated RBAC grants within dev for future bootstrap runs. Repeat with environment-specific scopes and subjects when adding qa, uat, or prod. An Owner or User Access Administrator must perform this initial authorization; Terraform cannot create the permission that authorizes its own first role assignment.
+For the separate-identity alternative, after the first bootstrap succeeds, reduce the bootstrap identity's scope: grant it `Reader` and `User Access Administrator` on `rg-platform-dev`, then remove its subscription-level `Contributor` and `User Access Administrator` assignments. Keep `Storage Blob Data Contributor` on the state storage account. This leaves it able to read state and manage the delegated RBAC grants within dev for future bootstrap runs. An Owner or User Access Administrator must perform this initial authorization; Terraform cannot create the permission that authorizes its own first role assignment.
 
-## Destroy identity and workflow sequence
+## Destroy workflow and sequence
 
-The normal deployment identity's ABAC condition deliberately prevents it from removing or broadening its own RBAC administrator grant. `<env>-destroy` therefore uses a separate identity with `Contributor` and `User Access Administrator` at subscription scope plus state-container `Storage Blob Data Contributor`. These broad permissions are only for teardown; protect its OIDC subject with required reviewers. The workflow additionally requires typing `DESTROY`.
+The current destroy workflow uses the shared repository-level ARM app, so its broad subscription permissions are also available to the other workflows using that app. The `dev-destroy` environment still requires reviewer approval and the workflow requires typing `DESTROY`, but these gates do not provide identity-level permission separation. For isolation, use a separate destroy app with `Contributor` and `User Access Administrator` at subscription scope plus state-container `Storage Blob Data Contributor`, configured as environment-level `ARM_*` overrides.
 
 1. Run **Actions → Terraform Plan**, select `<env>`, and inspect the plan.
 2. Run **Actions → Terraform Apply**, select `<env>`, then approve the protected environment. Apply creates a fresh plan and applies it.

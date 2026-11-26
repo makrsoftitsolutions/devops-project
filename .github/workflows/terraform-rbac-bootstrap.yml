@@ -155,9 +155,9 @@ jobs:
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment || 'dev' }}
       ARM_USE_OIDC: "true"
-      ARM_CLIENT_ID: ${{ vars.BOOTSTRAP_ARM_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ vars.BOOTSTRAP_ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ vars.BOOTSTRAP_ARM_SUBSCRIPTION_ID }}
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
       TF_BACKEND_RESOURCE_GROUP: ${{ vars.TF_BACKEND_RESOURCE_GROUP }}
       TF_BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_BACKEND_STORAGE_ACCOUNT }}
       TF_BACKEND_CONTAINER: ${{ vars.TF_BACKEND_CONTAINER }}
@@ -183,20 +183,20 @@ jobs:
           }
           config_subscription=$(sed -nE 's/^[[:space:]]*subscription_id[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -n1)
           if [[ "$config_subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
-            echo "BOOTSTRAP_ARM_SUBSCRIPTION_ID must match subscription_id in $config."
+            echo "ARM_SUBSCRIPTION_ID must match subscription_id in $config."
             exit 1
           fi
           if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_TENANT_ID" || -z "$TF_BACKEND_RESOURCE_GROUP" || -z "$TF_BACKEND_STORAGE_ACCOUNT" || -z "$TF_BACKEND_CONTAINER" ]]; then
-            echo "Set BOOTSTRAP_ARM_* and TF_BACKEND_* variables in the ${TARGET_ENVIRONMENT}-bootstrap GitHub Environment."
+            echo "Set ARM_* and TF_BACKEND_* variables in the ${TARGET_ENVIRONMENT}-bootstrap GitHub Environment."
             exit 1
           fi
 
       - uses: azure/login@v2
         with:
           auth-type: SERVICE_PRINCIPAL
-          client-id: ${{ vars.BOOTSTRAP_ARM_CLIENT_ID }}
-          tenant-id: ${{ vars.BOOTSTRAP_ARM_TENANT_ID }}
-          subscription-id: ${{ vars.BOOTSTRAP_ARM_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
