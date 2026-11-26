@@ -274,6 +274,7 @@ module "aks" {
   identity_id                = module.aks_identity[0].id
   system_node_count          = var.aks_system_node_count
   system_vm_size             = var.aks_system_vm_size
+  enable_user_node_pool      = var.enable_aks_user_node_pool
   user_node_pool_name        = var.aks_user_node_pool_name
   user_node_pool_min_count   = var.aks_user_node_pool_min_count
   user_node_pool_max_count   = var.aks_user_node_pool_max_count

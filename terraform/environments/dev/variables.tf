@@ -152,6 +152,12 @@ variable "aks_user_node_pool_name" {
   default     = "usernodepl1"
 }
 
+variable "enable_aks_user_node_pool" {
+  description = "Enable the autoscaling AKS user pool after regional vCPU quota is available."
+  type        = bool
+  default     = true
+}
+
 variable "aks_user_node_pool_min_count" {
   description = "Minimum number of nodes maintained in the AKS user pool."
   type        = number

@@ -44,6 +44,11 @@ variable "user_node_pool_name" {
     error_message = "Linux AKS node pool names must start with a lowercase letter and contain at most 12 lowercase alphanumeric characters."
   }
 }
+variable "enable_user_node_pool" {
+  description = "Whether to create the autoscaling AKS user node pool."
+  type        = bool
+  default     = true
+}
 variable "user_node_pool_min_count" {
   type    = number
   default = 2

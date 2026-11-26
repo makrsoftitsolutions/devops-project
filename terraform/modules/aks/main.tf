@@ -57,6 +57,8 @@ resource "azurerm_kubernetes_cluster" "this" {
 }
 
 resource "azurerm_kubernetes_cluster_node_pool" "user" {
+  count = var.enable_user_node_pool ? 1 : 0
+
   name                  = var.user_node_pool_name
   kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
   vm_size               = var.system_vm_size

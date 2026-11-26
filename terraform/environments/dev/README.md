@@ -14,7 +14,7 @@ The values in `terraform.tfvars` enable:
 | Management VM | Enabled | Private VM in the spoke; access via Bastion |
 | Azure Container Registry (ACR) | Enabled | Admin account disabled |
 | Azure Kubernetes Service (AKS) | Enabled | Private cluster with a user-assigned control-plane identity |
-| AKS user node pool | Enabled | `usernodepl1`; autoscaler maintains 2–3 `Standard_D2s_v5` nodes |
+| AKS user node pool | Temporarily disabled | `usernodepl1`; enable after Central India regional and DSv5 vCPU quota is increased; autoscaler is configured for 2–3 `Standard_D2s_v5` nodes |
 | AKS network permission | Enabled | AKS identity has `Network Contributor` on the AKS subnet |
 | AKS image pull permission | Enabled | `AcrPull` is granted to the AKS kubelet identity on ACR |
 | Azure Firewall | Temporarily disabled | `enable_firewall = false` while the subscription is at its Central India public IP quota; re-enable after quota is increased |
@@ -77,7 +77,7 @@ The Application Gateway subnet is dedicated and currently has no NSG or route-ta
 
 Key Vault uses `privatelink.vaultcore.azure.net`, linked to the spoke VNet, and the private endpoint is placed in `snet-private`. The management VM can resolve the private vault address through the spoke link. Any other client network that needs vault access must also have a suitable DNS and network path.
 
-The AKS user pool is configured with autoscaling between two and three nodes, using the same VM size as the system pool. Linux AKS node pool names are limited to 12 lowercase alphanumeric characters, so the requested `usernodepool1` is represented by `usernodepl1`.
+The AKS user pool is configured to autoscale between two and three nodes, using the same VM size as the system pool. It is temporarily disabled with `enable_aks_user_node_pool = false` because the subscription has no remaining Central India regional vCPU quota. After quota is increased, set this value to `true` and apply Terraform. Linux AKS node pool names are limited to 12 lowercase alphanumeric characters, so the requested `usernodepool1` is represented by `usernodepl1`.
 
 The AKS ingress endpoint has not been deployed yet, so `application_gateway_backend_fqdn` remains `null`. Set it to the ingress FQDN after deployment before directing application traffic through the gateway.
 
