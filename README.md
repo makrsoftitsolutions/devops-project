@@ -15,8 +15,7 @@ terraform/
 .github/workflows/            # Terraform and ACR image workflows
 docker/                       # NGINX image build context
 application/                  # NGINX sample app used by the AKS deployment
-kubernetes/dev/               # Dev namespace, config, deployment, and service
-kubernetes/arc/               # ARC runner scale set and least-privilege RBAC
+kubernetes/dev/               # Dev namespace, deployment, service, and ingress
 docs/                         # Architecture and deployment notes
 ```
 
@@ -49,7 +48,7 @@ The common ARM app currently has subscription-level `Contributor` and `User Acce
 
 The `Build and Push NGINX Image` workflow builds from `docker/` and pushes `nginx-demo:<commit-sha>` to ACR. Commits under `docker/` target dev; manual runs can select another configured environment. Apply Terraform and grant `AcrPush` before running it.
 
-The **Bootstrap ARC runners in AKS (dev)** workflow installs an ephemeral Actions Runner Controller (ARC) scale set from `ubuntu-latest` using the public AKS API. The **Build and Deploy NGINX to AKS (dev)** workflow builds and pushes on `ubuntu-latest`, then dispatches a one-job ARC runner pod to deploy into AKS. The ARC scale set is named `arc-aks-dev`, has zero idle runners and a maximum of one runner, and removes the runner pod after each job. See [the deployment runbook](docs/deployment.md) for required GitHub App setup. The AKS API is internet-reachable and should be restricted to authorized IP ranges beyond dev. The application Service remains `ClusterIP`.
+The **Build and Deploy NGINX to AKS (dev)** workflow builds, pushes, and deploys from GitHub-hosted `ubuntu-latest` runners. It uses GitHub OIDC to authenticate to Azure and the public AKS API; no runner pods or ARC installation are required inside AKS. The AKS API is internet-reachable and should be restricted to authorized IP ranges beyond dev. The application Service remains `ClusterIP`.
 
 ## Network notes
 

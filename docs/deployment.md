@@ -6,15 +6,23 @@ Use **Actions → Terraform Plan**, **Terraform Apply**, and **Terraform Destroy
 
 Configure the identities, federated credentials, backend variables, GitHub Environments, approvals, and Azure RBAC from the [GitHub Actions setup guide](github-actions-setup.md). Only `dev` has a Terraform environment folder today. Before selecting `qa`, `uat`, or `prod`, create a matching `terraform/environments/<environment>/terraform.tfvars`, backend settings, OIDC federated credential, and protected GitHub Environment.
 
-## Bootstrap ephemeral ARC runners and deploy the sample app
+## Deploy the sample app from GitHub-hosted runners
 
-Dev AKS has a public API endpoint for bootstrap access from GitHub-hosted runners. After Terraform Apply, manually run **Actions → Bootstrap ARC runners in AKS (dev)**. It uses the dev OIDC identity to install the pinned ARC 0.15.1 controller and an ephemeral runner scale set named `arc-aks-dev`, with zero idle runners and a maximum of one active runner. The public endpoint requires Entra/Azure RBAC authentication, but is reachable from the internet; restrict its authorized IP ranges before using this beyond dev.
+Dev AKS has a public API endpoint for access from GitHub-hosted runners. After Terraform Apply, run **Actions → Build and Deploy NGINX to AKS (dev)** manually, or push a change to the configured `main` paths. Both build and deploy jobs run on `ubuntu-latest`. The build job authenticates to Azure with OIDC, builds the image, and pushes it to ACR. The deploy job authenticates separately, gets temporary AKS admin credentials, installs the pinned NGINX Ingress Controller chart, applies the `kubernetes/dev/` manifests, updates the image, and waits for the rollout. The temporary kubeconfig is removed at the end of the job.
 
-Create and install a GitHub App for this repository with **Administration: Read and write** and **Metadata: Read-only** repository permissions. Store its app ID, installation ID, and private key as the protected `dev` environment secrets `ARC_GITHUB_APP_ID`, `ARC_GITHUB_APP_INSTALLATION_ID`, and `ARC_GITHUB_APP_PRIVATE_KEY`. The bootstrap workflow creates the Kubernetes secret consumed by ARC; do not commit these values or put them in Helm arguments.
+No ARC controller, runner scale set, GitHub App, or runner pod is required in AKS. The Ingress exposes the app over plain HTTP through a public LoadBalancer; it has no TLS configuration or hostname. Community `ingress-nginx` support ended in March 2026, so this configuration is for temporary dev use only and should be replaced with a supported ingress solution before production. The public AKS API is internet-reachable; restrict authorized IP ranges where feasible. Using admin credentials is a dev-only shortcut; use narrowly scoped AKS RBAC for production.
 
-Run **Actions → Build and Deploy NGINX to AKS (dev)** manually, or push a change to the configured `main` paths. The build and ACR push use GitHub-hosted `ubuntu-latest`; deployment uses a one-job ARC runner pod. The pod receives only namespaced permissions to manage the app's ConfigMap, Service, and Deployment and inspect rollout status. ARC creates the pod for the queued job and removes it when the job finishes. Its Kubernetes service-account token is used for in-cluster API access; the deploy job does not request AKS administrator credentials. Build output is retained as a short-lived GitHub Actions artifact.
+If ARC was installed previously, remove its Helm releases and namespaces once from an authenticated shell with `kubectl` and Helm. For a GitHub-hosted runner, first sign in with Azure OIDC, run `az aks get-credentials --admin`, and install Helm with `azure/setup-helm@v4`:
 
-The `nginx-demo` Service is internal-only (`ClusterIP`); publish it only through a separately approved ingress or gateway configuration.
+```bash
+helm uninstall arc-aks-dev --namespace arc-runners --ignore-not-found
+helm uninstall arc-controller --namespace arc-systems --ignore-not-found
+kubectl delete namespace arc-runners arc-systems --ignore-not-found=true
+```
+
+These commands remove ARC releases and running pods, not AKS or the application namespace. After cleanup, remove the unused `ARC_GITHUB_APP_ID`, `ARC_GITHUB_APP_INSTALLATION_ID`, and `ARC_GITHUB_APP_PRIVATE_KEY` secrets from the GitHub `dev` environment.
+
+The `nginx-demo` Service remains internal-only (`ClusterIP`); the Ingress routes HTTP traffic to it through the NGINX controller's public LoadBalancer.
 
 Optional services are controlled in each environment's `terraform.tfvars`. Dev disables Log Analytics, Azure Monitor Private Link, PostgreSQL, Storage, Event Hubs, Service Bus, Application Insights, Bastion, and Application Gateway. Only the core network, required role assignments, AKS, ACR, and Key Vault are enabled. Review private DNS, routing, role assignments, quota, and recurring costs before enabling other services.
 
@@ -30,4 +38,4 @@ Terraform creates role assignments through the shared RBAC module. The current d
 
 ## Quota and service limits
 
-Azure quota limits still apply. Dev uses one 2-vCPU system node and one 2-vCPU user node, with the user pool capped at one node to fit the current 4-vCPU regional quota. The management VM is disabled; ARC runner pods run in the AKS user pool. Increase quota before adding nodes or re-enabling the management VM. Check regional SKU availability, IP/vCPU quota, subnet capacity, and service costs in the GitHub plan before applying.
+Azure quota limits still apply. Dev uses one 2-vCPU system node and one 2-vCPU user node, with the user pool capped at one node to fit the current 4-vCPU regional quota. The management VM is disabled; GitHub-hosted runners do not consume AKS node capacity. Increase quota before adding nodes or re-enabling the management VM. Check regional SKU availability, IP/vCPU quota, subnet capacity, and service costs in the GitHub plan before applying.
