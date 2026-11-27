@@ -535,6 +535,7 @@ module "aks" {
   resource_group_name        = azurerm_resource_group.spoke.name
   dns_prefix                 = local.aks_dns_prefix
   kubernetes_version         = var.aks_kubernetes_version
+  private_cluster_enabled    = var.aks_private_cluster_enabled
   subnet_id                  = module.spoke_network.subnet_ids["snet-aks"]
   identity_id                = module.aks_identity[0].id
   kubelet_identity_id        = module.aks_kubelet_identity[0].id

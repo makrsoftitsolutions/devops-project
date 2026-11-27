@@ -19,21 +19,14 @@ spoke_subnets = {
   snet-private    = { address_prefixes = ["10.1.5.0/24"] }
   snet-workloads  = { address_prefixes = ["10.1.6.0/24"] }
   snet-management = { address_prefixes = ["10.1.7.0/24"] }
-  snet-postgres = {
-    address_prefixes = ["10.1.8.0/24"]
-    delegation = {
-      name         = "postgres-flexible-server"
-      service_name = "Microsoft.DBforPostgreSQL/flexibleServers"
-      actions      = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
-    }
-  }
+  snet-postgres   = { address_prefixes = ["10.1.8.0/24"] }
 }
 
-enable_log_analytics                    = true
+enable_log_analytics                    = false
 enable_firewall                         = false
 enable_firewall_management_ip           = false
 enable_workload_firewall_default_route  = false
-enable_bastion                          = true
+enable_bastion                          = false
 enable_application_gateway              = false
 application_gateway_backend_fqdn        = null
 application_gateway_zones               = ["1", "2", "3"]
@@ -44,6 +37,7 @@ acr_sku                                 = "Basic"
 key_vault_name                          = "kv-makrsoft-dev-002"
 enable_acr_push                         = true
 enable_aks                              = true
+aks_private_cluster_enabled             = false
 enable_aks_acr_pull                     = true
 deployment_principal_object_id          = "33bf4292-01a6-45ef-a0be-8ce660ae9b53"
 enable_key_vault                        = true
@@ -52,7 +46,7 @@ enable_storage_account                  = false
 enable_event_hubs                       = false
 enable_service_bus                      = false
 enable_application_insights             = false
-enable_azure_monitor_private_link       = true
+enable_azure_monitor_private_link       = false
 postgres_flexible_server_name           = null
 postgres_version                        = "16"
 postgres_admin_username                 = "pgadminuser"
@@ -78,7 +72,7 @@ application_insights_retention_days     = 90
 storage_blob_role_assignments           = {}
 event_hubs_role_assignments             = {}
 service_bus_role_assignments            = {}
-enable_management_vm                    = true
+enable_management_vm                    = false
 management_vm_size                      = "Standard_D2as_v7"
 management_vm_zone                      = null
 management_admin_username               = "azureadmin"

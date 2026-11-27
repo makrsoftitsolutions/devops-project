@@ -114,9 +114,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-  deploy-and-log:
+  deploy:
     needs: build
-    if: always()
     runs-on: arc-aks-dev
     environment: dev
     permissions:
@@ -125,22 +124,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install PostgreSQL client library
-        run: python -m pip install --requirement scripts/requirements-build-log.txt
-
-      - name: Download build output
-        if: always()
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output
-          path: ${{ runner.temp }}/build-output
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
@@ -191,21 +174,6 @@ jobs:
             -f kubernetes/dev/service.yaml
           kubectl set image -n dev deployment/nginx-demo nginx="$IMAGE_REF"
           kubectl rollout status -n dev deployment/nginx-demo --timeout=180s
-
-      - name: Persist build output and status to PostgreSQL
-        if: always()
-        env:
-          BUILD_LOG_DATABASE_URL: ${{ secrets.BUILD_LOG_DATABASE_URL }}
-          BUILD_STATUS: ${{ needs.build.result }}
-          DEPLOY_STATUS: ${{ steps.deploy.outcome || 'skipped' }}
-          IMAGE_REF: ${{ needs.build.outputs.image_ref }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          REPOSITORY: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-          SOURCE_REF: ${{ github.ref }}
-          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python scripts/store_build_log.py "$RUNNER_TEMP/build-output/build-output.log"
 
       - name: Remove temporary kubeconfig
         if: always()

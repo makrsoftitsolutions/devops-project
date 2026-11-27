@@ -5,7 +5,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   dns_prefix                        = var.dns_prefix
   kubernetes_version                = var.kubernetes_version
   sku_tier                          = "Free"
-  private_cluster_enabled           = true
+  private_cluster_enabled           = var.private_cluster_enabled
   role_based_access_control_enabled = true
 
   default_node_pool {

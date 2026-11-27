@@ -18,14 +18,7 @@ spoke_subnets = {
   snet-private    = { address_prefixes = ["10.1.5.0/24"] }
   snet-workloads  = { address_prefixes = ["10.1.6.0/24"] }
   snet-management = { address_prefixes = ["10.1.7.0/24"] }
-  snet-postgres   = {
-    address_prefixes = ["10.1.8.0/24"]
-    delegation = {
-      name         = "postgres-flexible-server"
-      service_name = "Microsoft.DBforPostgreSQL/flexibleServers"
-      actions      = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
-    }
-  }
+  snet-postgres   = { address_prefixes = ["10.1.8.0/24"] }
 }
 
 enable_log_analytics        = false
@@ -39,6 +32,7 @@ enable_acr_private_endpoint = false
 acr_public_network_access_enabled = true
 acr_sku                     = "Basic"
 enable_aks                  = false
+aks_private_cluster_enabled = false
 aks_system_vm_size          = "Standard_D2as_v7"
 aks_user_node_pool_vm_size  = "Standard_D2as_v7"
 aks_user_node_pool_min_count = 1

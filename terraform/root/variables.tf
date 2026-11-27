@@ -400,6 +400,12 @@ variable "aks_kubernetes_version" {
   default = null
 }
 
+variable "aks_private_cluster_enabled" {
+  description = "Whether AKS uses a private API server endpoint; false enables public API access."
+  type        = bool
+  default     = true
+}
+
 variable "aks_system_node_count" {
   type    = number
   default = 1

@@ -8,34 +8,27 @@ The shared Terraform root is in `terraform/root`. This folder contains only the 
 | --- | --- |
 | Hub and spoke VNets | `10.0.0.0/16` and `10.1.0.0/16`, with subnets defined in `terraform.tfvars` |
 | Management VM | Disabled to stay within the subscription's 4-vCPU quota |
-| Azure Bastion | Enabled in the hub; no management VM currently uses it |
-| ACR | Enabled; admin account disabled |
-| AKS | Enabled; private cluster with pre-created user-assigned control-plane and kubelet identities |
+| Route tables and role assignments | Enabled for workload routing and the AKS/ACR identities |
+| Azure Bastion | Disabled |
+| ACR | Enabled with public network access; admin account disabled |
+| AKS | Enabled with public API access and pre-created user-assigned control-plane and kubelet identities |
 | AKS system pool | One `Standard_D2as_v7` node (2 vCPUs) |
 | AKS user pool | One `Standard_D2as_v7` node (2 vCPUs), max count 1 |
-| Azure Firewall | Disabled to preserve the limited regional public IP quota; its separate management IP is optional and off unless forced tunneling is required |
-| Application Gateway | Disabled to preserve the limited regional public IP quota; backend FQDN is unset |
-| Log Analytics | Enabled and connected to AKS monitoring |
+| Azure Firewall, Application Gateway, Log Analytics, Azure Monitor Private Link | Disabled |
 | Key Vault | Enabled with RBAC, private endpoint, and private DNS |
-| PostgreSQL Flexible Server | Optional; VNet-injected in a delegated subnet with private DNS |
-| Storage Account | Optional; public access disabled and Blob private endpoint/DNS enabled |
-| Event Hubs | Optional; namespace and hub use private endpoint/DNS |
-| Service Bus | Optional; namespace and queue use private endpoint/DNS |
-| Application Insights | Optional; linked to Log Analytics |
-| Azure Monitor diagnostics | Diagnostic settings send enabled service logs to Log Analytics |
-| Azure Monitor Private Link | Enabled for Log Analytics with an AMPLS private endpoint and five DNS zones |
+| PostgreSQL, Storage, Event Hubs, Service Bus, Application Insights | Disabled |
 
-PostgreSQL, Storage, Event Hubs, Service Bus, and Application Insights are disabled in dev by default. Azure Monitor Private Link is enabled for the existing Log Analytics workspace. Review the plan, SKU availability, recurring private-endpoint costs, and app identity/RBAC before enabling other services. PostgreSQL additionally needs `POSTGRES_ADMIN_PASSWORD` configured in the protected `dev`, `dev-bootstrap`, and `dev-destroy` GitHub Environments. Do not place that password in `terraform.tfvars`. Generated PostgreSQL, Storage, Event Hubs, and Service Bus names may need environment-specific overrides for global uniqueness.
+Only networking, route tables, required role assignments, AKS, ACR, Key Vault, and AKS node pools are enabled in dev. The Key Vault private endpoint and private DNS are retained to keep the vault private. The AKS API endpoint is public and internet-reachable; Azure/Entra authentication and Kubernetes RBAC remain enabled. Configure API-server authorized IP ranges before using this beyond dev.
 
-East US is selected after comparing the live subscription limits and VM size catalogs in East US, UK South, Southeast Asia, and South India. On 2026-11-26, Azure reported a 4-vCPU regional quota and a 4-vCPU `Dasv7` family quota. The current dev configuration uses one 2-vCPU `Standard_D2as_v7` system node and one 2-vCPU user node, consuming that quota. The management VM is disabled; the user pool is capped at one node. Azure's VM SKU API showed `Standard_D2as_v7` available to this subscription in East US, but a plan cannot guarantee physical capacity at apply time. Re-enable the management VM or scale the user pool only after increasing quota.
+East US is selected after comparing the live subscription limits and VM size catalogs in East US, UK South, Southeast Asia, and South India. On 2026-11-26, Azure reported a 4-vCPU regional quota and a 4-vCPU `Dasv7` family quota. The current dev configuration uses one 2-vCPU `Standard_D2as_v7` system node and one 2-vCPU user node, consuming that quota. The management VM is disabled; the user pool is capped at one node. ARC creates one temporary runner pod in this user pool for an application deployment. Azure's VM SKU API showed `Standard_D2as_v7` available to this subscription in East US, but a plan cannot guarantee physical capacity at apply time. Re-enable the management VM or scale the user pool only after increasing quota.
 
-The previous apply was rejected because `Standard_D2as_v5`, `Standard_D4s_v5`, and `Standard_B2s` are restricted for this subscription in East US. Dev now uses the allowed `Standard_D2as_v7` SKU for both AKS pools. Azure Bastion remains enabled but has no management VM to connect to; disable it if it has no other use to avoid its ongoing charge. Key Vault uses `kv-makrsoft-dev-002` because `kv-makrsoft-dev-001` is held in a purge-protected deleted-vault record.
+The previous apply was rejected because `Standard_D2as_v5`, `Standard_D4s_v5`, and `Standard_B2s` are restricted for this subscription in East US. Dev now uses the allowed `Standard_D2as_v7` SKU for both AKS pools. Key Vault uses `kv-makrsoft-dev-002` because `kv-makrsoft-dev-001` is held in a purge-protected deleted-vault record.
 
 ## Environment inputs and naming
 
 The environment-specific inputs are in `terraform.tfvars`: subscription, region, environment, project, address spaces, subnet prefixes, feature flags, VM sizes, and role identities. Change subnet CIDRs when the environment must connect to networks that use overlapping ranges.
 
-Names for resource groups, VNets, NSGs, routes, the management VM, Log Analytics, Firewall, Bastion, Application Gateway, AKS, ACR, Key Vault, PostgreSQL, Storage, Event Hubs, and Service Bus are generated from environment and project. Use the corresponding `*_name` override inputs when generated globally unique names are unavailable or do not meet naming policy.
+Names for resource groups, VNets, NSGs, routes, AKS, ACR, Key Vault, and optional services are generated from environment and project. Use the corresponding `*_name` override inputs when generated globally unique names are unavailable or do not meet naming policy.
 
 Only `dev` is configured today. To add `qa`, `uat`, or `prod`, create `terraform/environments/<environment>` and copy in `terraform.tfvars` and `backend.hcl` (plus the example file if useful). Change `environment` and the environment's subscription, region, CIDRs, identities, resource options, and any required name overrides. Point each backend file at the intended state storage account; GitHub Actions uses `<environment>.terraform.tfstate`. Configure the matching GitHub Environment with OIDC and backend variables before running its workflow. The workflow environment choices exist, but a run stops if the matching configuration folder is missing.
 
@@ -50,16 +43,15 @@ Terraform orders dependent services from resource references and explicit depend
 1. Resource groups, VNets, and subnets.
 2. NSGs, route tables, and VNet peerings.
 3. Network and workload identities and their required role assignments.
-4. ACR, AKS, optional management VM/Firewall/Bastion/Application Gateway, and Key Vault.
-5. AKS ACR-pull and any enabled management-VM role assignments after their principals and scopes exist.
-6. Private DNS zones and VNet links before their private endpoints; PostgreSQL waits for its DNS link and uses a delegated subnet.
-7. Application Insights and diagnostic settings after the Log Analytics workspace exists.
+4. ACR, AKS, and Key Vault.
+5. AKS ACR-pull and deployment role assignments after their principals and scopes exist.
+6. Key Vault private DNS zones and VNet links before its private endpoint.
 
 The dependency graph allows independent resources to deploy in parallel while blocking each dependent resource until its prerequisites are ready.
 
 ## Role assignments and bootstrap
 
-Role assignments use the reusable `terraform/modules/rbac` module. Terraform manages AKS subnet `Network Contributor`, AKS kubelet `AcrPull`, GitHub deployment `AcrPush`, and the management VM's Reader/AKS roles. Optional app data roles are configured with `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments`; each map accepts stable keys, a principal object ID, and a least-privilege role. Terraform constrains role assignment administration to the exact role/principal pairs it manages. Role IDs are checked against Microsoft's [Azure RBAC built-in role catalog](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
+Role assignments use the reusable `terraform/modules/rbac` module. Terraform manages AKS subnet `Network Contributor`, AKS kubelet `AcrPull`, and GitHub deployment `AcrPush` plus constrained assignment permissions. Optional app data roles are configured with `storage_blob_role_assignments`, `event_hubs_role_assignments`, and `service_bus_role_assignments`; each map accepts stable keys, a principal object ID, and a least-privilege role. Terraform constrains role assignment administration to the exact role/principal pairs it manages. Role IDs are checked against Microsoft's [Azure RBAC built-in role catalog](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
 
 The current repository-level ARM app is shared by the dev, bootstrap, and destroy workflows and has subscription-level `Contributor` and `User Access Administrator`, plus state access. This allows the bootstrap workflow to create role assignments, but also gives normal Plan/Apply and Destroy the same broad permissions. GitHub environment approvals do not isolate Azure permissions for a shared app. Prefer separate app identities before production; the bootstrap plan guard still limits resources in the targeted bootstrap plan.
 
@@ -87,8 +79,8 @@ The `Build and Push NGINX Image` workflow pushes `nginx-demo:<commit-sha>` to th
 
 ## Networking and application traffic
 
-The Application Gateway subnet is dedicated and has no NSG or route-table association. Firewall deployment remains disabled while the public IP quota is exhausted. Enabling `enable_workload_firewall_default_route` routes only the workloads subnet through Firewall; enable it only after egress rules are configured. The AKS subnet is not associated with that route table.
+The Application Gateway subnet is reserved and has no NSG or route-table association. The AKS API endpoint is public; use API-server authorized IP ranges to limit access when required. Firewall, Bastion, and Application Gateway are disabled. Enabling `enable_workload_firewall_default_route` routes only the workloads subnet through Firewall; enable it only after egress rules are configured.
 
-Key Vault, Storage Blob, Event Hubs, and Service Bus use private endpoints in `snet-private` and private DNS zones linked to both spoke and hub VNets. Event Hubs and Service Bus share `privatelink.servicebus.windows.net`. PostgreSQL Flexible Server uses VNet injection into the dedicated delegated `snet-postgres` subnet; its private DNS zone is linked to both VNets. Azure Monitor uses an AMPLS linked to Log Analytics and, when enabled, Application Insights, with one private endpoint and five DNS zones linked to both VNets. `PrivateOnly` access means Monitor ingestion and queries must resolve and route through a linked VNet. Ensure custom DNS, VPN, or on-prem clients forward these zones correctly. Each VNet can connect to only one AMPLS, so verify there is no existing one before applying.
+Key Vault uses a private endpoint in `snet-private` and private DNS zones linked to both VNets. Optional data and monitoring services are disabled, so their private endpoints and DNS zones are not provisioned.
 
-The AKS ingress FQDN is not configured as an Application Gateway backend. Set `application_gateway_backend_fqdn` after deploying ingress and confirming a reachable backend.
+The AKS ingress FQDN is not configured as an Application Gateway backend. Application Gateway is disabled in dev.

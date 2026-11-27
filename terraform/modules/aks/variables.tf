@@ -18,6 +18,13 @@ variable "kubernetes_version" {
   type    = string
   default = null
 }
+
+variable "private_cluster_enabled" {
+  description = "Whether AKS uses a private API server endpoint; false enables public API access."
+  type        = bool
+  default     = true
+}
+
 variable "subnet_id" {
   type = string
 }

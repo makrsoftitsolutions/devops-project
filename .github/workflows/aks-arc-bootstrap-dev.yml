@@ -12,9 +12,7 @@ concurrency:
 
 jobs:
   bootstrap:
-    runs-on:
-      group: ${{ vars.AKS_BOOTSTRAP_RUNNER_GROUP }}
-      labels: ${{ vars.AKS_BOOTSTRAP_RUNNER_LABEL }}
+    runs-on: ubuntu-latest
     environment: dev
     permissions:
       contents: read
@@ -74,7 +72,7 @@ jobs:
           echo "aks_name=$aks_name" >> "$GITHUB_OUTPUT"
           echo "resource_group=rg-platform-${environment}" >> "$GITHUB_OUTPUT"
 
-      - name: Get private AKS admin credentials
+      - name: Get public AKS admin credentials
         shell: bash
         run: |
           set -euo pipefail
