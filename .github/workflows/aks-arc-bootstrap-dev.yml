@@ -1,0 +1,149 @@
+name: Bootstrap ARC runners in AKS (dev)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aks-arc-bootstrap-dev
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on:
+      group: ${{ vars.AKS_BOOTSTRAP_RUNNER_GROUP }}
+      labels: ${{ vars.AKS_BOOTSTRAP_RUNNER_LABEL }}
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      ARC_GITHUB_APP_ID: ${{ secrets.ARC_GITHUB_APP_ID }}
+      ARC_GITHUB_APP_INSTALLATION_ID: ${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}
+      ARC_GITHUB_APP_PRIVATE_KEY: ${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          auth-type: SERVICE_PRINCIPAL
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Read dev AKS name
+        id: infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="terraform/environments/dev/terraform.tfvars"
+          if [[ ! -f "$config" ]]; then
+            echo "Missing $config."
+            exit 1
+          fi
+
+          tfvar() {
+            sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$config" | head -n1
+          }
+
+          environment=$(tfvar environment)
+          subscription=$(tfvar subscription_id)
+          aks_name=$(tfvar aks_name)
+
+          if [[ "$environment" != "dev" || "$subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "The dev environment subscription must match ARM_SUBSCRIPTION_ID."
+            exit 1
+          fi
+          if [[ -z "$aks_name" ]]; then
+            aks_name="aks-${environment}-platform"
+          fi
+
+          echo "aks_name=$aks_name" >> "$GITHUB_OUTPUT"
+          echo "resource_group=rg-platform-${environment}" >> "$GITHUB_OUTPUT"
+
+      - name: Get private AKS admin credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubeconfig="$RUNNER_TEMP/aks-dev-bootstrap-kubeconfig"
+          az aks get-credentials \
+            --resource-group "${{ steps.infrastructure.outputs.resource_group }}" \
+            --name "${{ steps.infrastructure.outputs.aks_name }}" \
+            --admin \
+            --file "$kubeconfig" \
+            --overwrite-existing
+          echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Create namespaces and runner permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl create namespace arc-systems --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace arc-runners --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f kubernetes/dev/namespace.yaml
+          kubectl apply -f kubernetes/arc/runner-rbac.yaml
+
+      - name: Create ARC GitHub App secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ARC_GITHUB_APP_ID:?Set the dev environment secret ARC_GITHUB_APP_ID}"
+          : "${ARC_GITHUB_APP_INSTALLATION_ID:?Set the dev environment secret ARC_GITHUB_APP_INSTALLATION_ID}"
+          : "${ARC_GITHUB_APP_PRIVATE_KEY:?Set the dev environment secret ARC_GITHUB_APP_PRIVATE_KEY}"
+
+          secret_dir=$(mktemp -d)
+          trap 'rm -rf "$secret_dir"' EXIT
+          umask 077
+          printf '%s' "$ARC_GITHUB_APP_ID" > "$secret_dir/github_app_id"
+          printf '%s' "$ARC_GITHUB_APP_INSTALLATION_ID" > "$secret_dir/github_app_installation_id"
+          printf '%s' "$ARC_GITHUB_APP_PRIVATE_KEY" > "$secret_dir/github_app_private_key"
+
+          kubectl create secret generic arc-github-app \
+            --namespace arc-runners \
+            --from-file=github_app_id="$secret_dir/github_app_id" \
+            --from-file=github_app_installation_id="$secret_dir/github_app_installation_id" \
+            --from-file=github_app_private_key="$secret_dir/github_app_private_key" \
+            --dry-run=client \
+            --output yaml | kubectl apply -f -
+
+      - name: Install ARC controller and ephemeral runner scale set
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm upgrade --install arc-controller \
+            oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller \
+            --version 0.15.1 \
+            --namespace arc-systems \
+            --create-namespace \
+            --wait \
+            --timeout 10m
+
+          helm upgrade --install arc-aks-dev \
+            oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+            --version 0.15.1 \
+            --namespace arc-runners \
+            --create-namespace \
+            --values kubernetes/arc/runner-scale-set-values.yaml \
+            --wait \
+            --timeout 10m
+
+          kubectl get pods --namespace arc-systems
+          kubectl get pods --namespace arc-runners
+
+      - name: Remove temporary kubeconfig
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/aks-dev-bootstrap-kubeconfig"

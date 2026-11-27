@@ -1,31 +1,41 @@
-name: Deploy NGINX to AKS (dev)
+name: Build and Deploy NGINX to AKS (dev)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "application/**"
+      - "kubernetes/dev/**"
+      - ".github/workflows/aks-deploy-dev.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: aks-deploy-dev
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    runs-on: [self-hosted, linux, x64, aks-dev]
+  build:
+    runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_ref: ${{ steps.infrastructure.outputs.image_ref }}
 
     env:
       ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
       IMAGE_NAME: nginx-demo
-      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Read dev infrastructure names
+      - name: Read dev ACR name
         id: infrastructure
         shell: bash
         run: |
@@ -44,7 +54,6 @@ jobs:
           subscription=$(tfvar subscription_id)
           project=$(tfvar project)
           acr_name=$(tfvar acr_name)
-          aks_name=$(tfvar aks_name)
 
           if [[ "$environment" != "dev" || "$subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
             echo "The dev environment subscription must match ARM_SUBSCRIPTION_ID."
@@ -57,17 +66,13 @@ jobs:
             acr_name="${acr_name,,}"
             acr_name="${acr_name:0:50}"
           fi
-          if [[ -z "$aks_name" ]]; then
-            aks_name="aks-${environment}-platform"
-          fi
           if [[ ! "$acr_name" =~ ^[a-z0-9]{5,50}$ ]]; then
             echo "Invalid ACR name '$acr_name'."
             exit 1
           fi
 
           echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
-          echo "aks_name=$aks_name" >> "$GITHUB_OUTPUT"
-          echo "resource_group=rg-platform-${environment}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${acr_name}.azurecr.io/${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2
@@ -85,42 +90,122 @@ jobs:
         run: az acr login --name "${{ steps.infrastructure.outputs.acr_name }}"
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        shell: bash
+        env:
+          ACR_NAME: ${{ steps.infrastructure.outputs.acr_name }}
+          IMAGE_REF: ${{ steps.infrastructure.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/build-output.log"
+          : > "$log"
+          docker buildx build \
+            --progress=plain \
+            --push \
+            --tag "$IMAGE_REF" \
+            --tag "$ACR_NAME.azurecr.io/${IMAGE_NAME}:dev" \
+            ./application 2>&1 | tee "$log"
+
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          context: ./application
-          file: ./application/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/nginx-demo:${{ github.sha }}
-            ${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/nginx-demo:dev
+          name: build-output
+          path: ${{ runner.temp }}/build-output.log
+          if-no-files-found: warn
+          retention-days: 1
+
+  deploy-and-log:
+    needs: build
+    if: always()
+    runs-on: arc-aks-dev
+    environment: dev
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client library
+        run: python -m pip install --requirement scripts/requirements-build-log.txt
+
+      - name: Download build output
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: ${{ runner.temp }}/build-output
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Get private AKS admin credentials
-        shell: bash
-        run: |
-          kubeconfig="$RUNNER_TEMP/aks-dev-kubeconfig"
-          az aks get-credentials \
-            --resource-group "${{ steps.infrastructure.outputs.resource_group }}" \
-            --name "${{ steps.infrastructure.outputs.aks_name }}" \
-            --admin \
-            --file "$kubeconfig" \
-            --overwrite-existing
-          echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
-
-      - name: Deploy to AKS
+      - name: Configure in-cluster Kubernetes access
         shell: bash
         run: |
           set -euo pipefail
+          service_account_dir=/var/run/secrets/kubernetes.io/serviceaccount
+          test -r "$service_account_dir/token"
+          test -r "$service_account_dir/ca.crt"
+
+          kubeconfig="$RUNNER_TEMP/aks-dev-kubeconfig"
+          cat > "$kubeconfig" <<EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - name: in-cluster
+            cluster:
+              server: https://kubernetes.default.svc
+              certificate-authority: $service_account_dir/ca.crt
+          contexts:
+          - name: in-cluster
+            context:
+              cluster: in-cluster
+              user: arc-runner
+              namespace: dev
+          current-context: in-cluster
+          users:
+          - name: arc-runner
+            user:
+              tokenFile: $service_account_dir/token
+          EOF
+          chmod 600 "$kubeconfig"
+          echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy to AKS
+        id: deploy
+        if: needs.build.result == 'success'
+        shell: bash
+        env:
+          IMAGE_REF: ${{ needs.build.outputs.image_ref }}
+        run: |
+          set -euo pipefail
           kubectl apply \
-            -f kubernetes/dev/namespace.yaml \
             -f kubernetes/dev/configmap.yaml \
             -f kubernetes/dev/deployment.yaml \
             -f kubernetes/dev/service.yaml
-          kubectl set image -n dev deployment/nginx-demo \
-            nginx="${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          kubectl set image -n dev deployment/nginx-demo nginx="$IMAGE_REF"
           kubectl rollout status -n dev deployment/nginx-demo --timeout=180s
+
+      - name: Persist build output and status to PostgreSQL
+        if: always()
+        env:
+          BUILD_LOG_DATABASE_URL: ${{ secrets.BUILD_LOG_DATABASE_URL }}
+          BUILD_STATUS: ${{ needs.build.result }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome || 'skipped' }}
+          IMAGE_REF: ${{ needs.build.outputs.image_ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/store_build_log.py "$RUNNER_TEMP/build-output/build-output.log"
 
       - name: Remove temporary kubeconfig
         if: always()

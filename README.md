@@ -16,6 +16,9 @@ terraform/
 docker/                       # NGINX image build context
 application/                  # NGINX sample app used by the AKS deployment
 kubernetes/dev/               # Dev namespace, config, deployment, and service
+kubernetes/arc/               # ARC runner scale set and least-privilege RBAC
+database/                     # PostgreSQL schema for build-run logs
+scripts/                      # Build-log persistence helper
 docs/                         # Architecture and deployment notes
 ```
 
@@ -42,13 +45,13 @@ Configure these repository-level Actions variables:
 - `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
 - `TF_BACKEND_RESOURCE_GROUP`, `TF_BACKEND_STORAGE_ACCOUNT`, `TF_BACKEND_CONTAINER`
 
-The common ARM app currently has subscription-level `Contributor` and `User Access Administrator`; those permissions are available to every manually dispatched workflow subject federated to that app, not just Bootstrap and Destroy. The backend key is generated from the selected environment; `TF_BACKEND_KEY` is not required. Dev keeps ACR public so GitHub-hosted runners can connect; private ACR needs Premium SKU and a VNet-connected self-hosted runner.
+The common ARM app currently has subscription-level `Contributor` and `User Access Administrator`; those permissions are available to every manually dispatched workflow subject federated to that app, not just Bootstrap and Destroy. The backend key is generated from the selected environment; `TF_BACKEND_KEY` is not required. Dev keeps ACR public so GitHub-hosted runners can connect; private ACR needs Premium SKU and a VNet-connected runner.
 
 ## NGINX image workflow
 
 The `Build and Push NGINX Image` workflow builds from `docker/` and pushes `nginx-demo:<commit-sha>` to ACR. Commits under `docker/` target dev; manual runs can select another configured environment. Apply Terraform and grant `AcrPush` before running it.
 
-The **Deploy NGINX to AKS (dev)** workflow builds `application/`, pushes the image to the dev ACR, and applies the manifests in `kubernetes/dev/`. Run it manually after Terraform Apply and the required ACR role assignments have completed. Because dev AKS is a private cluster, configure a Linux self-hosted GitHub Actions runner with the `aks-dev` label inside a network that can resolve and reach the AKS private API; the runner also needs Azure CLI and Docker available. The workflow currently obtains AKS administrator credentials, so restrict the `dev` GitHub Environment and runner access to trusted maintainers. The Service is `ClusterIP`; access it from within the cluster or use an approved ingress path.
+The **Bootstrap ARC runners in AKS (dev)** workflow installs an ephemeral Actions Runner Controller (ARC) scale set from a GitHub larger runner with private VNet access. The **Build and Deploy NGINX to AKS (dev)** workflow builds and pushes on `ubuntu-latest`, then dispatches a one-job ARC runner pod to deploy into private AKS and store build output/status in the existing PostgreSQL database. The ARC scale set is named `arc-aks-dev`, has a maximum of one runner, and deletes runner pods after each job. See [the deployment runbook](docs/deployment.md) for required runner, GitHub App, and PostgreSQL setup. The Service remains `ClusterIP`.
 
 ## Network notes
 
