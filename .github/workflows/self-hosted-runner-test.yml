@@ -1,28 +1,31 @@
 
-name: Self Hosted Runner Test
+name: Windows Self Hosted Runner Validation
 
 on:
   workflow_dispatch:
 
 jobs:
-  runner-test:
+  validate:
     runs-on: [self-hosted, azure-vm-runner]
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Display runner information
+      - name: Validate Git
         shell: powershell
-        run: |
-          Write-Host "Running on Azure Self Hosted Runner"
-          hostname
-          whoami
-          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture
+        run: git --version
 
-      - name: Check installed tools
+      - name: Validate Azure CLI
+        shell: powershell
+        run: az version
+
+      - name: Validate Terraform
+        shell: powershell
+        run: terraform version
+
+      - name: Validate Kubernetes
         shell: powershell
         run: |
-          git --version
-          az version
-          terraform version
+          kubectl version --client
+          kubelogin --version
