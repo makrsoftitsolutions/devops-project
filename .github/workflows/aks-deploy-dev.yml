@@ -1,0 +1,128 @@
+name: Deploy NGINX to AKS (dev)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aks-deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64, aks-dev]
+    environment: dev
+
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      IMAGE_NAME: nginx-demo
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Read dev infrastructure names
+        id: infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="terraform/environments/dev/terraform.tfvars"
+          if [[ ! -f "$config" ]]; then
+            echo "Missing $config."
+            exit 1
+          fi
+
+          tfvar() {
+            sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$config" | head -n1
+          }
+
+          environment=$(tfvar environment)
+          subscription=$(tfvar subscription_id)
+          project=$(tfvar project)
+          acr_name=$(tfvar acr_name)
+          aks_name=$(tfvar aks_name)
+
+          if [[ "$environment" != "dev" || "$subscription" != "$ARM_SUBSCRIPTION_ID" ]]; then
+            echo "The dev environment subscription must match ARM_SUBSCRIPTION_ID."
+            exit 1
+          fi
+
+          if [[ -z "$acr_name" ]]; then
+            acr_name="${project}${environment}acr001"
+            acr_name="${acr_name//-/}"
+            acr_name="${acr_name,,}"
+            acr_name="${acr_name:0:50}"
+          fi
+          if [[ -z "$aks_name" ]]; then
+            aks_name="aks-${environment}-platform"
+          fi
+          if [[ ! "$acr_name" =~ ^[a-z0-9]{5,50}$ ]]; then
+            echo "Invalid ACR name '$acr_name'."
+            exit 1
+          fi
+
+          echo "acr_name=$acr_name" >> "$GITHUB_OUTPUT"
+          echo "aks_name=$aks_name" >> "$GITHUB_OUTPUT"
+          echo "resource_group=rg-platform-${environment}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          auth-type: SERVICE_PRINCIPAL
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        shell: bash
+        run: az acr login --name "${{ steps.infrastructure.outputs.acr_name }}"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./application
+          file: ./application/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/nginx-demo:${{ github.sha }}
+            ${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/nginx-demo:dev
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Get private AKS admin credentials
+        shell: bash
+        run: |
+          kubeconfig="$RUNNER_TEMP/aks-dev-kubeconfig"
+          az aks get-credentials \
+            --resource-group "${{ steps.infrastructure.outputs.resource_group }}" \
+            --name "${{ steps.infrastructure.outputs.aks_name }}" \
+            --admin \
+            --file "$kubeconfig" \
+            --overwrite-existing
+          echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Deploy to AKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply \
+            -f kubernetes/dev/namespace.yaml \
+            -f kubernetes/dev/configmap.yaml \
+            -f kubernetes/dev/deployment.yaml \
+            -f kubernetes/dev/service.yaml
+          kubectl set image -n dev deployment/nginx-demo \
+            nginx="${{ steps.infrastructure.outputs.acr_name }}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          kubectl rollout status -n dev deployment/nginx-demo --timeout=180s
+
+      - name: Remove temporary kubeconfig
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/aks-dev-kubeconfig"

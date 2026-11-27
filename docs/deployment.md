@@ -6,6 +6,12 @@ Use **Actions → Terraform Plan**, **Terraform Apply**, and **Terraform Destroy
 
 Configure the identities, federated credentials, backend variables, GitHub Environments, approvals, and Azure RBAC from the [GitHub Actions setup guide](github-actions-setup.md). Only `dev` has a Terraform environment folder today. Before selecting `qa`, `uat`, or `prod`, create a matching `terraform/environments/<environment>/terraform.tfvars`, backend settings, OIDC federated credential, and protected GitHub Environment.
 
+## Deploy the sample NGINX app to dev AKS
+
+Run **Actions → Deploy NGINX to AKS (dev)** manually after the dev Terraform Apply and ACR push role assignment have completed. The workflow builds `application/`, pushes an immutable commit-SHA tag to ACR, applies `kubernetes/dev/`, updates the Deployment to that image, and waits for rollout.
+
+Dev AKS is private. The workflow must run on a trusted Linux self-hosted runner labelled `aks-dev` that has Azure CLI and Docker installed and network/DNS access to the AKS private API. The workflow uses the shared `ARM_*` OIDC variables and requests AKS administrator credentials; protect the `dev` GitHub Environment and limit runner access. The `nginx-demo` Service is internal-only (`ClusterIP`); publish it only through a separately approved ingress or gateway configuration.
+
 Optional services are controlled in each environment's `terraform.tfvars`. Dev enables Azure Monitor Private Link for Log Analytics; PostgreSQL, Storage, Event Hubs, Service Bus, and Application Insights are disabled. Set PostgreSQL's administrator password as the protected GitHub Environment secret `POSTGRES_ADMIN_PASSWORD`; the workflow maps it into Terraform. Application Insights requires Log Analytics. Review private DNS, routing, role assignments, quota, and recurring costs before enabling services.
 
 ## Private networking

@@ -14,6 +14,8 @@ terraform/
     dev/                      # Dev tfvars and backend configuration
 .github/workflows/            # Terraform and ACR image workflows
 docker/                       # NGINX image build context
+application/                  # NGINX sample app used by the AKS deployment
+kubernetes/dev/               # Dev namespace, config, deployment, and service
 docs/                         # Architecture and deployment notes
 ```
 
@@ -45,6 +47,8 @@ The common ARM app currently has subscription-level `Contributor` and `User Acce
 ## NGINX image workflow
 
 The `Build and Push NGINX Image` workflow builds from `docker/` and pushes `nginx-demo:<commit-sha>` to ACR. Commits under `docker/` target dev; manual runs can select another configured environment. Apply Terraform and grant `AcrPush` before running it.
+
+The **Deploy NGINX to AKS (dev)** workflow builds `application/`, pushes the image to the dev ACR, and applies the manifests in `kubernetes/dev/`. Run it manually after Terraform Apply and the required ACR role assignments have completed. Because dev AKS is a private cluster, configure a Linux self-hosted GitHub Actions runner with the `aks-dev` label inside a network that can resolve and reach the AKS private API; the runner also needs Azure CLI and Docker available. The workflow currently obtains AKS administrator credentials, so restrict the `dev` GitHub Environment and runner access to trusted maintainers. The Service is `ClusterIP`; access it from within the cluster or use an approved ingress path.
 
 ## Network notes
 
